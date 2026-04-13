@@ -189,6 +189,7 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:3001',
+    'https://myvisafrontend-ip5h.vercel.app',
     os.environ.get('FRONTEND_URL', ''),
 ]
 
@@ -244,5 +245,6 @@ CHANNEL_LAYERS = {
 
 CSRF_TRUSTED_ORIGINS = [
     'https://web-production-f50dc.up.railway.app',
+    'https://myvisafrontend-ip5h.vercel.app',
     'http://localhost:3000',
 ]
