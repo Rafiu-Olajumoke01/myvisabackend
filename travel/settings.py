@@ -241,3 +241,8 @@ CHANNEL_LAYERS = {
         },
     }
 }
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://web-production-f50dc.up.railway.app',
+    'http://localhost:3000',
+]
