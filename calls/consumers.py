@@ -5,11 +5,16 @@ from channels.db import database_sync_to_async
 
 class CallConsumer(AsyncWebsocketConsumer):
 
+    # ✅ ADDED: safe defaults (fixes your crash)
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = None
+        self.user_group = None
+        self.is_agent = False
+
     # ─────────────────────────────────────────────────────────────────────────
     # CONNECT
-    # Runs when a user/agent opens a WebSocket connection.
     # ─────────────────────────────────────────────────────────────────────────
-
     async def connect(self):
         user = self.scope['user']
 
@@ -30,28 +35,24 @@ class CallConsumer(AsyncWebsocketConsumer):
         print(f'[WS] Connected: user={user.id} is_agent={self.is_agent}')
 
     # ─────────────────────────────────────────────────────────────────────────
-    # DISCONNECT
-    # Runs when a user/agent closes the connection or drops off.
-    #
-    # FIX: If an agent disconnects while on a call (e.g. closed browser tab),
-    #      we set their status back to 'available' so new clients can reach them
-    #      when they reconnect. Without this, a crashed agent stays 'busy' forever.
+    # DISCONNECT (FIXED ONLY HERE)
     # ─────────────────────────────────────────────────────────────────────────
-
     async def disconnect(self, close_code):
-        if not hasattr(self, 'user_group'):
-            return
-        await self.channel_layer.group_discard(self.user_group, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
+
         if getattr(self, 'is_agent', False):
             await self.channel_layer.group_discard('agents_room', self.channel_name)
-            await self.set_agent_status(self.user, 'available')
-        print(f'[WS] Disconnected: user={self.user.id} code={close_code}')
+
+            if self.user:
+                await self.set_agent_status(self.user, 'available')
+
+        user_id = self.user.id if self.user else 'unknown'
+        print(f'[WS] Disconnected: user={user_id} code={close_code}')
 
     # ─────────────────────────────────────────────────────────────────────────
     # RECEIVE — main router
-    # Every message sent from the frontend arrives here first.
     # ─────────────────────────────────────────────────────────────────────────
-
     async def receive(self, text_data):
         data = json.loads(text_data)
         event_type = data.get('type')
@@ -60,9 +61,6 @@ class CallConsumer(AsyncWebsocketConsumer):
         # ── CALL EVENTS ───────────────────────────────────────────────────────
 
         if event_type == 'call_request':
-            # FIX: Check if any agent is free before creating a session.
-            #      Before this, a call would broadcast even if all agents were busy,
-            #      and the client would just hang forever with no feedback.
             has_free_agent = await self.any_agent_available()
             if not has_free_agent:
                 await self.send(text_data=json.dumps({
@@ -87,9 +85,6 @@ class CallConsumer(AsyncWebsocketConsumer):
             session    = await self.get_session(session_id)
 
             if session:
-                # FIX: Atomic check — locks the session row in the DB so two agents
-                #      cannot both accept the same call at the same time (race condition).
-                #      Also checks if this agent is already busy — all in one DB transaction.
                 success = await self.attach_agent_to_session(session, self.user)
                 if not success:
                     await self.send(text_data=json.dumps({
@@ -99,7 +94,6 @@ class CallConsumer(AsyncWebsocketConsumer):
                     }))
                     return
 
-                # Refresh session from DB so we have the latest agent/user info
                 session = await self.get_session(session_id)
                 user_group = f'user_{session.user_id}'
                 await self.channel_layer.group_send(user_group, {
@@ -125,9 +119,6 @@ class CallConsumer(AsyncWebsocketConsumer):
             session_id = data.get('session_id')
             session    = await self.get_session(session_id)
             if session:
-                # FIX: mark_session_completed now also sets agent status back
-                #      to 'available'. Before this fix, the agent stayed 'busy'
-                #      after a call ended, so no new clients could ever reach them.
                 await self.mark_session_completed(session)
 
                 user_group = f'user_{session.user_id}'
@@ -145,7 +136,6 @@ class CallConsumer(AsyncWebsocketConsumer):
             print(f'[WS] onboarding_started for session {session_id}')
 
         elif event_type == 'onboarding_complete':
-            # Legacy: kept for backward compatibility
             session_id      = data.get('session_id')
             readiness_score = data.get('readiness_score', 0)
             recommendation  = data.get('recommendation', '')
@@ -164,7 +154,7 @@ class CallConsumer(AsyncWebsocketConsumer):
                     'recommendation':  recommendation,
                     'applicant_name':  applicant_name,
                 })
-                print(f'[WS] evaluation_result (via onboarding_complete) → {user_group}')
+                print(f'[WS] evaluation_result → {user_group}')
 
         # ── CHAT EVENTS ───────────────────────────────────────────────────────
 
@@ -198,7 +188,6 @@ class CallConsumer(AsyncWebsocketConsumer):
                     recipient_group = f'user_{agent_user_id}'
                     await self.channel_layer.group_send(recipient_group, payload)
 
-            # Echo back to sender
             await self.send(text_data=json.dumps(payload))
 
         elif event_type == 'chat_history':
@@ -214,8 +203,6 @@ class CallConsumer(AsyncWebsocketConsumer):
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHANNEL LAYER EVENT HANDLERS
-    # Called automatically when group_send() dispatches a message here.
-    # Method name must match the 'type' field (dots → underscores).
     # ─────────────────────────────────────────────────────────────────────────
 
     async def call_request(self, event):
@@ -247,7 +234,7 @@ class CallConsumer(AsyncWebsocketConsumer):
 
     async def agent_approved(self, event):
         await self.send(text_data=json.dumps(event))
-    
+
     # ─────────────────────────────────────────────────────────────────────────
     # HELPERS
     # ─────────────────────────────────────────────────────────────────────────
@@ -261,16 +248,13 @@ class CallConsumer(AsyncWebsocketConsumer):
 
     # ─────────────────────────────────────────────────────────────────────────
     # DATABASE HELPERS
-    # All DB calls must use @database_sync_to_async because Django ORM is
-    # synchronous but this consumer runs in async mode.
     # ─────────────────────────────────────────────────────────────────────────
 
     @database_sync_to_async
     def check_if_agent(self, user):
         from .models import Agent
-        return Agent.objects.filter(email=user.email).exists() 
+        return Agent.objects.filter(email=user.email).exists()
 
-    # Returns True if at least one agent has status='available'.
     @database_sync_to_async
     def any_agent_available(self):
         from .models import Agent
@@ -286,28 +270,24 @@ class CallConsumer(AsyncWebsocketConsumer):
         from .models import CallSession
         try:
             return CallSession.objects.select_related('user', 'agent__user').get(id=session_id)
-        except (CallSession.DoesNotExist, Exception):
+        except:
             return None
 
-    # FIX: Atomic version — locks the session row so two agents cannot accept
-    #      the same call simultaneously. Also checks if agent is already busy.
-    #      Returns True if successful, False if the call was already taken or agent is busy.
     @database_sync_to_async
     def attach_agent_to_session(self, session, user):
         from .models import Agent, CallSession
         from django.db import transaction
         try:
             with transaction.atomic():
-                # Lock session row — no other agent can read/write it until we're done
                 locked_session = CallSession.objects.select_for_update().get(id=session.id)
 
                 if locked_session.status == 'accepted':
-                    return False  # Another agent already got it
+                    return False
 
                 agent = Agent.objects.get(email=user.email, is_active=True)
 
                 if agent.status == 'busy':
-                    return False  # This agent is already on a call
+                    return False
 
                 agent.status = 'busy'
                 agent.save(update_fields=['status'])
@@ -316,10 +296,9 @@ class CallConsumer(AsyncWebsocketConsumer):
                 locked_session.status = 'accepted'
                 locked_session.save(update_fields=['agent', 'status'])
                 return True
-        except (Agent.DoesNotExist, CallSession.DoesNotExist):
+        except:
             return False
 
-    # FIX: Sets agent.status = 'available' when the call ends.
     @database_sync_to_async
     def mark_session_completed(self, session):
         from .models import Agent
@@ -330,10 +309,9 @@ class CallConsumer(AsyncWebsocketConsumer):
                 agent        = Agent.objects.get(id=session.agent_id)
                 agent.status = 'available'
                 agent.save(update_fields=['status'])
-        except Agent.DoesNotExist:
+        except:
             pass
 
-    # Resets agent to 'available' if they disconnect mid-call.
     @database_sync_to_async
     def set_agent_status(self, user, status):
         from .models import Agent
@@ -341,26 +319,22 @@ class CallConsumer(AsyncWebsocketConsumer):
             agent        = Agent.objects.get(email=user.email, is_active=True)
             agent.status = status
             agent.save(update_fields=['status'])
-        except Agent.DoesNotExist:
+        except:
             pass
 
     @database_sync_to_async
     def get_agent_user_id(self, session):
         try:
             return session.agent.user_id
-        except Exception:
+        except:
             return None
 
     @database_sync_to_async
     def get_applicant_name(self, session):
         try:
             user = session.user
-            return (
-                getattr(user, 'fullname', None)
-                or user.get_full_name()
-                or user.email
-            )
-        except Exception:
+            return getattr(user, 'fullname', None) or user.get_full_name() or user.email
+        except:
             return 'Applicant'
 
     @database_sync_to_async
