@@ -39,6 +39,8 @@ class CallConsumer(AsyncWebsocketConsumer):
     # ─────────────────────────────────────────────────────────────────────────
 
     async def disconnect(self, close_code):
+        if not hasattr(self, 'user_group'):
+            return
         await self.channel_layer.group_discard(self.user_group, self.channel_name)
         if getattr(self, 'is_agent', False):
             await self.channel_layer.group_discard('agents_room', self.channel_name)
