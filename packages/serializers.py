@@ -13,13 +13,13 @@ class PackageImageSerializer(serializers.ModelSerializer):
     def get_image(self, obj):
         if not obj.image:
             return None
-        try:
-            return obj.image.url
-        except Exception:
-            url = str(obj.image)
-            if url.startswith('http'):
-                return url
-            return f'https://res.cloudinary.com/dmbgrroos/image/upload/{url}'
+        url = str(obj.image)
+        if url.startswith('http'):
+            return url
+        url = url.lstrip('/')
+        if 'image/upload' in url:
+            return f'https://res.cloudinary.com/dmbgrroos/{url}'
+        return f'https://res.cloudinary.com/dmbgrroos/image/upload/{url}'
 
 
 COMMON_FIELDS = [
