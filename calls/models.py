@@ -5,13 +5,15 @@ import uuid
 
 class Agent(models.Model):
     STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
         ('available', 'Available'),
         ('busy', 'Busy'),
         ('offline', 'Offline'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # ✅ Link to User model
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -24,8 +26,8 @@ class Agent(models.Model):
     email = models.EmailField(unique=True)
     phone = models.CharField(max_length=20, blank=True, null=True)
     profile_picture = models.ImageField(upload_to='agents/', blank=True, null=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='available')
-    is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -98,7 +100,8 @@ class CallEvaluation(models.Model):
 
     def __str__(self):
         return f"Evaluation — Session {self.session.id} | Score: {self.readiness_score}%"
-    
+
+
 class ChatMessage(models.Model):
     id         = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     session    = models.ForeignKey(CallSession, on_delete=models.CASCADE, related_name='messages')

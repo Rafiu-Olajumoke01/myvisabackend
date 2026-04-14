@@ -542,27 +542,29 @@ class AgentsListView(APIView):
 class AgentStatusUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def patch(self, request, agent_id, **kwargs):
+    def patch(self, request, agent_id, action, **kwargs):
         from .models import Agent
+
+        if action not in ('approved', 'rejected'):
+            return Response({'error': 'Invalid action.'}, status=400)
+
         try:
             agent = Agent.objects.get(id=agent_id)
-            new_status = 'approved' if 'approved' in request.path else 'rejected'
-            agent.status = new_status
-            agent.is_active = (new_status == 'approved')
+            agent.status = action
+            agent.is_active = (action == 'approved')
             agent.save()
 
-            # 👇 Notify the agent via WebSocket
             if agent.user:
                 channel_layer = get_channel_layer()
                 async_to_sync(channel_layer.group_send)(
                     f'user_{agent.user.id}',
                     {
                         'type': 'agent_approved',
-                        'message': 'Your application has been approved!',
-                        'status': new_status,
+                        'message': 'Your application has been approved!' if action == 'approved' else 'Your application was rejected.',
+                        'status': action,
                     }
                 )
 
-            return Response({'message': f'Agent {new_status} successfully'})
+            return Response({'message': f'Agent {action} successfully', 'status': action})
         except Agent.DoesNotExist:
             return Response({'error': 'Agent not found'}, status=404)

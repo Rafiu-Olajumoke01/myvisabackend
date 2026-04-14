@@ -13,8 +13,7 @@ urlpatterns = [
     path('evaluate/<str:session_id>/', views.CallEvaluationCreateView.as_view(), name='call-evaluate'),
     path('clients/', views.ClientsListView.as_view(), name='clients-list'),
     path('clients/<int:user_id>/', views.ClientDetailView.as_view(), name='client-detail'),
-    path('agents/<str:agent_id>/approved/', views.AgentStatusUpdateView.as_view(), name='agent-approve'),
-    path('agents/<str:agent_id>/rejected/', views.AgentStatusUpdateView.as_view(), name='agent-reject'),
+    path('agents/<str:agent_id>/<str:action>/', views.AgentStatusUpdateView.as_view(), name='agent-status-update'),
     path('agents/', views.AgentsListView.as_view(), name='agents-list'),
 
     # ✅ NEW — Unlock chat after discovery call
