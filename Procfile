@@ -1,1 +1,1 @@
-web: gunicorn travel.wsgi
+web: python manage.py migrate && python manage.py shell -c "from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.filter(email='admin@myvisa.com').exists() or User.objects.create_superuser('myvisaadmin', 'admin@myvisa.com', 'Admin1234!')" && gunicorn travel.wsgi:application
