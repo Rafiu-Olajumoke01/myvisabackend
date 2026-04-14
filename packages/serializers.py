@@ -4,11 +4,21 @@ from .models import Package, PackageImage
 
 
 class PackageImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = PackageImage
         fields = ['id', 'image', 'alt_text', 'order']
 
-
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+        url = str(obj.image)
+        if url.startswith('http'):
+            return url
+        return f'https://res.cloudinary.com/dmbgrroos/{url}'
+    
+    
 COMMON_FIELDS = [
     'id', 'title', 'category', 'is_free', 'is_active',
     'price', 'service_fee', 'processing_time',
