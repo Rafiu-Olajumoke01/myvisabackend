@@ -13,12 +13,15 @@ class PackageImageSerializer(serializers.ModelSerializer):
     def get_image(self, obj):
         if not obj.image:
             return None
-        url = str(obj.image)
-        if url.startswith('http'):
-            return url
-        return f'https://res.cloudinary.com/dmbgrroos/{url}'
-    
-    
+        try:
+            return obj.image.url
+        except Exception:
+            url = str(obj.image)
+            if url.startswith('http'):
+                return url
+            return f'https://res.cloudinary.com/dmbgrroos/image/upload/{url}'
+
+
 COMMON_FIELDS = [
     'id', 'title', 'category', 'is_free', 'is_active',
     'price', 'service_fee', 'processing_time',
@@ -30,7 +33,6 @@ STUDENT_FIELDS = [
     'tuition_fees', 'course', 'course_duration',
     'application_fees', 'post_study_work_visa',
     'admission_requirement', 'visa_required',
-    # new
     'degree_type', 'course_city', 'course_expectations',
 ]
 
@@ -43,13 +45,11 @@ TOURIST_FIELDS = [
 
 BUSINESS_MEDICAL_FIELDS = [
     'country', 'visa_duration',
-    # new
     'hospital_name', 'hospital_city', 'medical_expectations',
 ]
 
 
 class PackageListSerializer(serializers.ModelSerializer):
-    """Used for listing packages (cards view)"""
     images = PackageImageSerializer(many=True, read_only=True)
 
     class Meta:
@@ -58,7 +58,6 @@ class PackageListSerializer(serializers.ModelSerializer):
 
 
 class PackageDetailSerializer(serializers.ModelSerializer):
-    """Used for create, update, retrieve (full detail)"""
     images = PackageImageSerializer(many=True, read_only=True)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
 
@@ -67,7 +66,6 @@ class PackageDetailSerializer(serializers.ModelSerializer):
         fields = COMMON_FIELDS + STUDENT_FIELDS + TOURIST_FIELDS + BUSINESS_MEDICAL_FIELDS + ['updated_at']
 
     def to_representation(self, instance):
-        """Convert requirements text to array when reading"""
         data = super().to_representation(instance)
         if data.get('requirements'):
             data['requirements'] = [
