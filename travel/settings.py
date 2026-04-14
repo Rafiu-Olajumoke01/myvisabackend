@@ -40,14 +40,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
+    # Cloudinary
+    'cloudinary_storage',
+    'cloudinary',
+
     # Third party apps
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'channels',
-    
+
     # My apps
     'calls',
     'users',
@@ -59,7 +63,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Added for static files
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -92,8 +96,6 @@ ASGI_APPLICATION = 'travel.asgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/5.0/ref/settings/#databases
-
 DATABASES = {
     'default': dj_database_url.config(
         default=os.environ.get('DATABASE_URL', 'sqlite:///db.sqlite3'),
@@ -102,8 +104,6 @@ DATABASES = {
 }
 
 # Password validation
-# https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
@@ -121,8 +121,6 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # Internationalization
-# https://docs.djangoproject.com/en/5.0/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'Africa/Lagos'
@@ -132,21 +130,25 @@ USE_I18N = True
 USE_TZ = True
 
 
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.0/howto/static-files/
-
+# Static files
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Media files (User uploads - images)
+# Media files — now handled by Cloudinary
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
+# Cloudinary Configuration
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'dmbgrroos',
+    'API_KEY': '322269142864961',
+    'API_SECRET': 'csSrybpqqmQYcBhkantm96Y4WcA',
+}
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
 
 # Default primary key field type
-# https://docs.djangoproject.com/en/5.0/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
@@ -174,10 +176,10 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
-    
+
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
-    
+
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
@@ -192,7 +194,6 @@ CORS_ALLOWED_ORIGINS = [
     os.environ.get('FRONTEND_URL', ''),
 ]
 
-# Remove empty strings from the list (in case FRONTEND_URL is not set)
 CORS_ALLOWED_ORIGINS = [origin for origin in CORS_ALLOWED_ORIGINS if origin]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -219,7 +220,7 @@ CORS_ALLOW_HEADERS = [
 ]
 
 
-# Email Configuration (for Forgot Password)
+# Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
@@ -228,7 +229,6 @@ EMAIL_HOST_USER = 'rafiuolajumoke7@gmail.com'
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = 'Travel Visa App <rafiuolajumoke7@gmail.com>'
 
-# Frontend URL — reset link in the email points here
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 

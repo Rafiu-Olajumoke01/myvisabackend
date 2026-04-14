@@ -1,6 +1,7 @@
 # packages/models.py
 from django.db import models
 from django.contrib.auth import get_user_model
+from cloudinary.models import CloudinaryField
 
 User = get_user_model()
 
@@ -13,7 +14,6 @@ class Package(models.Model):
         ('medical',  'Medical'),
     ]
 
-    # ── Always present ─────────────────────────────────────────
     title           = models.CharField(max_length=255)
     category        = models.CharField(max_length=50, choices=CATEGORY_CHOICES, blank=True, null=True)
     description     = models.TextField(blank=True, null=True)
@@ -24,7 +24,6 @@ class Package(models.Model):
     price           = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
     service_fee     = models.CharField(max_length=50, blank=True, null=True)
 
-    # ── Student fields ─────────────────────────────────────────
     university_name       = models.CharField(max_length=255, blank=True, null=True)
     university_logo       = models.URLField(blank=True, null=True)
     location              = models.CharField(max_length=255, blank=True, null=True)
@@ -36,12 +35,10 @@ class Package(models.Model):
     admission_requirement = models.TextField(blank=True, null=True)
     visa_required         = models.CharField(max_length=10, blank=True, null=True)
 
-    # ── New student fields ─────────────────────────────────────
-    degree_type         = models.CharField(max_length=50, blank=True, null=True)   # e.g. BSc, MSc, MBA
-    course_city         = models.CharField(max_length=100, blank=True, null=True)  # city of the school
-    course_expectations = models.TextField(blank=True, null=True)                  # what to expect
+    degree_type         = models.CharField(max_length=50, blank=True, null=True)
+    course_city         = models.CharField(max_length=100, blank=True, null=True)
+    course_expectations = models.TextField(blank=True, null=True)
 
-    # ── Tourist fields ─────────────────────────────────────────
     trip_duration          = models.PositiveIntegerField(blank=True, null=True)
     cost                   = models.CharField(max_length=100, blank=True, null=True)
     covers_visa            = models.BooleanField(default=False)
@@ -52,16 +49,13 @@ class Package(models.Model):
     covers_food            = models.BooleanField(default=False)
     covers_local_transport = models.BooleanField(default=False)
 
-    # ── Business / Medical fields ───────────────────────────────
     country       = models.CharField(max_length=100, blank=True, null=True)
     visa_duration = models.CharField(max_length=100, blank=True, null=True)
 
-    # ── New medical fields ─────────────────────────────────────
-    hospital_name        = models.CharField(max_length=255, blank=True, null=True)  # hospital name
-    hospital_city        = models.CharField(max_length=100, blank=True, null=True)  # city of hospital
-    medical_expectations = models.TextField(blank=True, null=True)                  # what to expect
+    hospital_name        = models.CharField(max_length=255, blank=True, null=True)
+    hospital_city        = models.CharField(max_length=100, blank=True, null=True)
+    medical_expectations = models.TextField(blank=True, null=True)
 
-    # ── Meta ───────────────────────────────────────────────────
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='packages')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -77,7 +71,7 @@ class Package(models.Model):
 
 class PackageImage(models.Model):
     package     = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='images')
-    image       = models.ImageField(upload_to='packages/%Y/%m/%d/')
+    image       = CloudinaryField('image')
     alt_text    = models.CharField(max_length=255, blank=True)
     order       = models.PositiveIntegerField(default=0)
     uploaded_at = models.DateTimeField(auto_now_add=True)
