@@ -374,7 +374,7 @@ class AgentStatusUpdateView(APIView):
             return Response({'error': 'Invalid action.'}, status=400)
         try:
             agent = Agent.objects.get(id=agent_id)
-            agent.status = action
+            agent.status = 'available' if action == 'approved' else 'rejected'
             agent.is_active = (action == 'approved')
             agent.save()
             if agent.user:
