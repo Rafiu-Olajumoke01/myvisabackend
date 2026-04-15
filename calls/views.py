@@ -63,7 +63,8 @@ class AcceptCallView(APIView):
         from django.db import transaction
         try:
             with transaction.atomic():
-                session = CallSession.objects.select_for_update().select_related('user').get(id=session_id)
+                # REPLACE with this
+                session = CallSession.objects.select_for_update().get(id=session_id)
                 if session.status != 'pending':
                     return Response({'error': 'Session not found or already handled.'}, status=status.HTTP_400_BAD_REQUEST)
                 try:
