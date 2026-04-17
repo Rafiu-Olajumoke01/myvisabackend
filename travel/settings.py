@@ -192,6 +192,8 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:3001',
     'https://myvisafrontend.vercel.app',  
     'https://myvisafrontend-ip5h.vercel.app',
+    "https://ingress.travel",
+    "https://www.ingress.travel",
     os.environ.get('FRONTEND_URL', ''),
 ]
 
