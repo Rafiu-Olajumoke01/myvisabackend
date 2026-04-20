@@ -23,7 +23,8 @@ class PackageImageSerializer(serializers.ModelSerializer):
 
 
 COMMON_FIELDS = [
-    'id', 'title', 'category', 'is_free', 'is_active',
+    'id', 'service_id',
+    'title', 'category', 'is_free', 'is_active',
     'price', 'service_fee', 'processing_time',
     'description', 'requirements', 'images', 'created_at',
 ]

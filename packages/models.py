@@ -2,6 +2,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
+import random
 
 User = get_user_model()
 
@@ -13,6 +14,8 @@ class Package(models.Model):
         ('business', 'Business'),
         ('medical',  'Medical'),
     ]
+
+    service_id = models.CharField(max_length=10, unique=True, blank=True)
 
     title           = models.CharField(max_length=255)
     category        = models.CharField(max_length=50, choices=CATEGORY_CHOICES, blank=True, null=True)
@@ -59,6 +62,15 @@ class Package(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='packages')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.service_id:
+            while True:
+                new_id = str(random.randint(1000, 9999))
+                if not Package.objects.filter(service_id=new_id).exists():
+                    self.service_id = new_id
+                    break
+        super().save(*args, **kwargs)
 
     class Meta:
         ordering = ['-created_at']
