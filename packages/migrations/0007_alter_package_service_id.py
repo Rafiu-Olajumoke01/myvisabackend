@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('packages', '0006_package_service_id'),
+        ('packages', '0006_5_backfill_service_id'),
     ]
 
     operations = [
