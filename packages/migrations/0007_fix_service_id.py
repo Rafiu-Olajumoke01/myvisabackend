@@ -1,4 +1,4 @@
-﻿from django.db import migrations
+from django.db import migrations
 import random
 
 def fix_and_apply(apps, schema_editor):
@@ -8,9 +8,9 @@ def fix_and_apply(apps, schema_editor):
         SET service_id = floor(random() * 9000 + 1000)::text
         WHERE service_id = '' OR service_id IS NULL;
     """)
-    # Step 2: make unique (only if not already)
+    # Step 2: add unique constraint only if it doesn't exist
     schema_editor.execute("""
-        DO \$\$
+        DO $$
         BEGIN
             IF NOT EXISTS (
                 SELECT 1 FROM pg_constraint
@@ -19,7 +19,7 @@ def fix_and_apply(apps, schema_editor):
                 ALTER TABLE packages_package ADD CONSTRAINT packages_package_service_id_key UNIQUE (service_id);
             END IF;
         END
-        \$\$;
+        $$;
     """)
 
 class Migration(migrations.Migration):
