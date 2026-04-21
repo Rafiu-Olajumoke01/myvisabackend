@@ -8,7 +8,7 @@ def fix_migration_state(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('packages', '0006_5_backfill_service_id'),
+        ('packages', '0007_alter_package_service_id'),
     ]
 
     operations = [
