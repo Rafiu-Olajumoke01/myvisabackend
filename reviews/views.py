@@ -6,6 +6,8 @@ from django.db.models import Avg, Count, Q
 from .models import Review
 from .serializers import ReviewSerializer, ReviewListSerializer, PackageRatingSerializer
 from packages.models import Package
+from .models import SPReview
+from providers.models import ServiceProvider
 
 
 class ReviewListView(generics.ListAPIView):
@@ -223,3 +225,126 @@ class PackageRatingView(APIView):
             'rating_summary': serializer.data,
             'message': 'Package rating retrieved successfully!'
         }, status=status.HTTP_200_OK)
+
+class SPReviewListView(APIView):
+    """
+    GET /api/reviews/sp/?provider_id=<id>
+    Get all reviews for a specific SP
+    Anyone can view
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        provider_id = request.query_params.get('provider_id')
+        if not provider_id:
+            return Response({'error': 'provider_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            provider = ServiceProvider.objects.get(id=provider_id)
+        except ServiceProvider.DoesNotExist:
+            return Response({'error': 'Service provider not found'}, status=404)
+
+        reviews = SPReview.objects.filter(provider=provider).select_related('user')
+
+        # Calculate average rating
+        from django.db.models import Avg
+        avg = reviews.aggregate(Avg('rating'))['rating__avg'] or 0
+
+        data = [
+            {
+                'id': str(r.id),
+                'user_name': r.user.get_full_name() or r.user.email,
+                'rating': r.rating,
+                'comment': r.comment,
+                'created_at': r.created_at.isoformat(),
+            }
+            for r in reviews
+        ]
+
+        return Response({
+            'reviews': data,
+            'count': reviews.count(),
+            'average_rating': round(avg, 1),
+        })
+
+
+class SPReviewCreateView(APIView):
+    """
+    POST /api/reviews/sp/create/
+    User rates an SP after a completed call
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        from calls.models import CallSession
+
+        provider_id = request.data.get('provider_id')
+        rating = request.data.get('rating')
+        comment = request.data.get('comment', '')
+
+        if not provider_id or not rating:
+            return Response({'error': 'provider_id and rating are required'}, status=400)
+
+        # Validate rating
+        try:
+            rating = int(rating)
+            if rating < 1 or rating > 5:
+                return Response({'error': 'Rating must be between 1 and 5'}, status=400)
+        except ValueError:
+            return Response({'error': 'Rating must be a number'}, status=400)
+
+        # Check SP exists
+        try:
+            provider = ServiceProvider.objects.get(id=provider_id)
+        except ServiceProvider.DoesNotExist:
+            return Response({'error': 'Service provider not found'}, status=404)
+
+        # Check user had a completed call with this SP
+        had_call = CallSession.objects.filter(
+            user=request.user,
+            service_provider=provider,
+            status='completed'
+        ).exists()
+
+        if not had_call:
+            return Response(
+                {'error': 'You can only rate an SP after a completed call with them.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Check if already reviewed
+        if SPReview.objects.filter(user=request.user, provider=provider).exists():
+            return Response({'error': 'You have already reviewed this service provider.'}, status=400)
+
+        review = SPReview.objects.create(
+            user=request.user,
+            provider=provider,
+            rating=rating,
+            comment=comment
+        )
+
+        return Response({
+            'message': 'Review submitted successfully!',
+            'review': {
+                'id': str(review.id),
+                'rating': review.rating,
+                'comment': review.comment,
+                'created_at': review.created_at.isoformat(),
+            }
+        }, status=201)
+
+
+class SPReviewDeleteView(APIView):
+    """
+    DELETE /api/reviews/sp/<id>/
+    User deletes their own SP review
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, id):
+        try:
+            review = SPReview.objects.get(id=id, user=request.user)
+            review.delete()
+            return Response({'message': 'Review deleted successfully!'})
+        except SPReview.DoesNotExist:
+            return Response({'error': 'Review not found or you are not the owner.'}, status=404)

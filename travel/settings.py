@@ -55,6 +55,8 @@ INSTALLED_APPS = [
     # My apps
     'calls',
     'users',
+    'providers',
+    'notifications',
     'packages',
     'applications',
     'bookmarks',

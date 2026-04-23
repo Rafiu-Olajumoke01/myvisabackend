@@ -2,6 +2,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from cloudinary.models import CloudinaryField
+from providers.models import ServiceProvider
 import random
 
 User = get_user_model()
@@ -59,6 +60,14 @@ class Package(models.Model):
     hospital_city        = models.CharField(max_length=100, blank=True, null=True)
     medical_expectations = models.TextField(blank=True, null=True)
 
+    # ← Who created this package
+    service_provider = models.ForeignKey(    # ← INSIDE the class
+        ServiceProvider,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='packages'
+    )
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='packages')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -80,7 +89,6 @@ class Package(models.Model):
     def __str__(self):
         return f"{self.title} - {self.category}"
 
-
 class PackageImage(models.Model):
     package     = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='images')
     image       = CloudinaryField('image')
@@ -95,3 +103,4 @@ class PackageImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.package.title} (Order: {self.order})"
+    

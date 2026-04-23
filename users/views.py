@@ -28,22 +28,6 @@ class UserRegistrationView(generics.CreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
-        print('NEW USER role:', user.role)  # 👈 add this
-        print('NEW USER email:', user.email)  # 👈 add this
-
-        # ✅ Auto-create Agent profile if role is agent
-        if getattr(user, 'role', None) == 'agent':
-            from calls.models import Agent
-            Agent.objects.update_or_create(
-                email=user.email,
-                defaults={
-                    'user': user,
-                    'first_name': user.first_name or '',
-                    'last_name': user.last_name or '',
-                    'status': 'pending',  # 👈 changed from 'available'
-                    'is_active': False,   # 👈 not active until admin approves
-                }
-            )
 
         refresh = RefreshToken.for_user(user)
 
@@ -56,7 +40,7 @@ class UserRegistrationView(generics.CreateAPIView):
                 'last_name': user.last_name,
                 'fullname': user.fullname,
                 'country': user.country,
-                'role': user.role,
+                'is_service_provider': False,  # always False on fresh registration
             },
             'tokens': {
                 'refresh': str(refresh),
@@ -64,6 +48,7 @@ class UserRegistrationView(generics.CreateAPIView):
             },
             'message': 'Registration successful!'
         }, status=status.HTTP_201_CREATED)
+
 
 class UserLoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -85,15 +70,16 @@ class UserLoginView(APIView):
         if user is None:
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # Get agent status if user is an agent
-        agent_status = None
-        if user.role == 'agent':
-            try:
-                from calls.models import Agent
-                agent = Agent.objects.get(user=user)
-                agent_status = agent.status
-            except Agent.DoesNotExist:
-                agent_status = 'pending'
+        # Check if user has an approved service provider profile
+        is_service_provider = False
+        sp_status = None
+        try:
+            from calls.models import ServiceProvider
+            sp = ServiceProvider.objects.get(user=user)
+            sp_status = sp.status
+            is_service_provider = sp.status == 'approved'
+        except Exception:
+            pass
 
         refresh = RefreshToken.for_user(user)
 
@@ -107,8 +93,8 @@ class UserLoginView(APIView):
                 'fullname': user.fullname,
                 'is_staff': user.is_staff,
                 'country': user.country,
-                'role': user.role,
-                'agent_status': agent_status,
+                'is_service_provider': is_service_provider,
+                'sp_status': sp_status,  # None | 'pending' | 'approved' | 'rejected'
             },
             'tokens': {
                 'refresh': str(refresh),
@@ -116,6 +102,7 @@ class UserLoginView(APIView):
             },
             'message': 'Login successful!'
         }, status=status.HTTP_200_OK)
+
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = UserProfileSerializer
@@ -139,7 +126,7 @@ class AdminUserListView(APIView):
                     'last_name': u.last_name,
                     'fullname': u.fullname,
                     'is_staff': u.is_staff,
-                    'role': u.role,  # 👈 added
+                    'is_service_provider': hasattr(u, 'sp_profile') and u.sp_profile.status == 'approved',
                 }
                 for u in users
             ]

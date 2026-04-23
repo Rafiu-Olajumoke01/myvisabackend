@@ -13,12 +13,6 @@ class User(AbstractUser):
     passport_number = models.CharField(max_length=50, blank=True, null=True)
     address = models.TextField(blank=True, null=True)
 
-    ROLE_CHOICES = [
-        ('user', 'User'),
-        ('agent', 'Agent'),
-    ]
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='user')
-
     class Meta:
         ordering = ['-date_joined']
 

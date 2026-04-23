@@ -7,16 +7,21 @@ from .views import (
     # Admin endpoints
     AdminPackageListCreateView,
     AdminPackageDetailView,
+    # Service Provider endpoints
+    SPPackageListCreateView,
+    SPPackageDetailView,
 )
 
 urlpatterns = [
     # ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────
-    # For regular users - only shows active packages
     path('', PackageListView.as_view(), name='package-list'),
     path('<int:id>/', PackageDetailView.as_view(), name='package-detail'),
-    
+
     # ─── ADMIN ENDPOINTS ─────────────────────────────────────────────────
-    # For admin panel - shows all packages and allows CRUD operations
     path('admin/', AdminPackageListCreateView.as_view(), name='admin-package-list-create'),
     path('admin/<int:id>/', AdminPackageDetailView.as_view(), name='admin-package-detail'),
+
+    # ─── SERVICE PROVIDER ENDPOINTS ──────────────────────────────────────
+    path('sp/', SPPackageListCreateView.as_view(), name='sp-package-list-create'),
+    path('sp/<str:id>/', SPPackageDetailView.as_view(), name='sp-package-detail'),
 ]

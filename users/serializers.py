@@ -8,13 +8,12 @@ User = get_user_model()
 class UserRegistrationSerializer(serializers.ModelSerializer):
     password  = serializers.CharField(write_only=True, required=True, validators=[validate_password])
     password2 = serializers.CharField(write_only=True, required=True)
-    role      = serializers.ChoiceField(choices=['user', 'agent'], default='user')
 
     class Meta:
         model = User
         fields = [
             'username', 'email', 'password', 'password2',
-            'first_name', 'last_name', 'phone', 'country', 'role',
+            'first_name', 'last_name', 'phone', 'country',
         ]
         extra_kwargs = {
             'first_name': {'required': True},
@@ -34,23 +33,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         validated_data.pop('password2')
-        role = validated_data.pop('role', 'user')
-
         user = User.objects.create_user(**validated_data)
-        user.role = role
-        user.save()
-
-        if role == 'agent':
-            from calls.models import Agent
-            Agent.objects.create(
-                user=user,     
-                first_name=user.first_name,
-                last_name=user.last_name,
-                email=user.email,
-                status='available',
-                is_active=True,
-            )
-
         return user
 
 
@@ -60,9 +43,9 @@ class UserLoginSerializer(serializers.Serializer):
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    fullname = serializers.SerializerMethodField()  
+    fullname = serializers.SerializerMethodField()
 
-    def get_fullname(self, obj):                    
+    def get_fullname(self, obj):
         return obj.fullname
 
     class Meta:
@@ -70,7 +53,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email',
             'first_name', 'last_name', 'fullname',
-            'is_staff', 'phone', 'country', 'role',
+            'is_staff', 'phone', 'country',
             'date_of_birth', 'passport_number', 'address',
             'date_joined',
         ]
