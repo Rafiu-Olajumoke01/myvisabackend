@@ -7,15 +7,12 @@ from .serializers import SPRegistrationSerializer, SPProfileSerializer
 
 
 
+from notifications.utils import send_notification  # 👈 ADD THIS
+
 class SPRegistrationView(APIView):
-    """
-    Any logged in user can apply to become a Service Provider.
-    POST /providers/register/
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # Check if user already has an application
         if ServiceProvider.objects.filter(user=request.user).exists():
             sp = ServiceProvider.objects.get(user=request.user)
             return Response({
@@ -27,16 +24,26 @@ class SPRegistrationView(APIView):
             data=request.data,
             context={'request': request}
         )
+
         if serializer.is_valid():
             sp = serializer.save()
+
+            # 🔥🔥 ADD THIS BLOCK
+            send_notification(
+                user=request.user,
+                type='sp_application_received',
+                title='Application Received',
+                message='Your service provider application has been received and is under review.',
+                data={'provider_id': str(sp.id)}
+            )
+
             return Response({
                 'message': 'Application submitted successfully. We will be in touch shortly.',
-                'status': sp.status,  # 'pending'
+                'status': sp.status,
                 'id': str(sp.id),
             }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class SPApplicationStatusView(APIView):
     """

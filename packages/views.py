@@ -11,7 +11,10 @@ class PackageListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        queryset = Package.objects.filter(is_active=True).prefetch_related('images')
+        queryset = Package.objects.filter(
+            is_active=True,
+            post_status='approved'  # ✅ only approved packages go public
+        ).prefetch_related('images')
         search = self.request.query_params.get('search', None)
         if search:
             queryset = queryset.filter(
@@ -45,7 +48,10 @@ class PackageListView(generics.ListAPIView):
 
 
 class PackageDetailView(generics.RetrieveAPIView):
-    queryset = Package.objects.filter(is_active=True).prefetch_related('images')
+    queryset = Package.objects.filter(
+        is_active=True,
+        post_status='approved'  # ✅ only approved packages
+    ).prefetch_related('images')
     serializer_class = PackageDetailSerializer
     permission_classes = [permissions.AllowAny]
     lookup_field = 'id'
@@ -65,7 +71,7 @@ class PackageDetailView(generics.RetrieveAPIView):
 
 class AdminPackageListCreateView(generics.ListCreateAPIView):
     serializer_class = PackageDetailSerializer
-    permission_classes = [permissions.IsAdminUser]  # ✅ admin only
+    permission_classes = [permissions.IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
@@ -106,7 +112,8 @@ class AdminPackageListCreateView(generics.ListCreateAPIView):
             return Response({'error': 'At least one image is required'}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        package = serializer.save()
+        # ✅ Admin packages go live immediately
+        package = serializer.save(post_status='approved', created_by=request.user)
         for image in images:
             PackageImage.objects.create(package=package, image=image)
         response_serializer = self.get_serializer(package)
@@ -119,7 +126,7 @@ class AdminPackageListCreateView(generics.ListCreateAPIView):
 class AdminPackageDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Package.objects.all().prefetch_related('images')
     serializer_class = PackageDetailSerializer
-    permission_classes = [permissions.IsAdminUser]  # ✅ admin only
+    permission_classes = [permissions.IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
     lookup_field = 'id'
 
@@ -148,6 +155,54 @@ class AdminPackageDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Response({'message': 'Package deleted successfully!'}, status=status.HTTP_200_OK)
 
 
+class AdminPendingPackagesView(generics.ListAPIView):
+    """Lists all SP packages waiting for admin review"""
+    permission_classes = [permissions.IsAdminUser]
+    serializer_class = PackageDetailSerializer
+
+    def get_queryset(self):
+        return Package.objects.filter(
+            post_status='pending_review'
+        ).prefetch_related('images').order_by('-created_at')
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            'packages': serializer.data,
+            'count': queryset.count(),
+            'message': 'Pending packages retrieved successfully!'
+        }, status=status.HTTP_200_OK)
+
+
+class AdminPackageApproveRejectView(generics.UpdateAPIView):
+    """Admin approves or rejects an SP package"""
+    permission_classes = [permissions.IsAdminUser]
+    queryset = Package.objects.all()
+    lookup_field = 'id'
+
+    def patch(self, request, *args, **kwargs):
+        action = kwargs.get('action')
+        if action not in ['approve', 'reject']:
+            return Response(
+                {'error': 'Invalid action. Use approve or reject.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        package = self.get_object()
+        if action == 'approve':
+            package.post_status = 'approved'
+            package.is_active = True
+        else:
+            package.post_status = 'rejected'
+            package.is_active = False
+        package.save()
+        return Response({
+            'message': f'Package {action}d successfully!',
+            'post_status': package.post_status,
+            'package_id': package.id,
+        }, status=status.HTTP_200_OK)
+
+
 # ============================================
 # SERVICE PROVIDER ENDPOINTS
 # ============================================
@@ -160,7 +215,9 @@ class SPPackageListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         try:
             provider = self.request.user.sp_profile
-            return Package.objects.filter(service_provider=provider).prefetch_related('images')
+            return Package.objects.filter(
+                service_provider=provider
+            ).prefetch_related('images')
         except Exception:
             return Package.objects.none()
 
@@ -177,9 +234,15 @@ class SPPackageListCreateView(generics.ListCreateAPIView):
         try:
             provider = request.user.sp_profile
         except Exception:
-            return Response({'error': 'You do not have a service provider profile.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'error': 'You do not have a service provider profile.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         if not provider.is_active or provider.status != 'approved':
-            return Response({'error': 'Your service provider account must be approved before creating packages.'}, status=status.HTTP_403_FORBIDDEN)
+            return Response(
+                {'error': 'Your service provider account must be approved before creating packages.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
         images = request.FILES.getlist('images')
         if len(images) == 0:
             return Response({'error': 'At least one image is required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -187,13 +250,18 @@ class SPPackageListCreateView(generics.ListCreateAPIView):
             return Response({'error': 'Maximum 20 images allowed per package.'}, status=status.HTTP_400_BAD_REQUEST)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        package = serializer.save(service_provider=provider, created_by=request.user)
+        # ✅ SP packages go to pending review — not live until admin approves
+        package = serializer.save(
+            service_provider=provider,
+            created_by=request.user,
+            post_status='pending_review'
+        )
         for image in images:
             PackageImage.objects.create(package=package, image=image)
         response_serializer = self.get_serializer(package)
         return Response({
             'package': response_serializer.data,
-            'message': 'Package created successfully!'
+            'message': 'Package submitted for review! Admin will approve it shortly.'
         }, status=status.HTTP_201_CREATED)
 
 
@@ -206,7 +274,9 @@ class SPPackageDetailView(generics.RetrieveUpdateDestroyAPIView):
     def get_queryset(self):
         try:
             provider = self.request.user.sp_profile
-            return Package.objects.filter(service_provider=provider).prefetch_related('images')
+            return Package.objects.filter(
+                service_provider=provider
+            ).prefetch_related('images')
         except Exception:
             return Package.objects.none()
 

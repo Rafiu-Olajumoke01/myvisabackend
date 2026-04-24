@@ -16,6 +16,12 @@ class Package(models.Model):
         ('medical',  'Medical'),
     ]
 
+    POST_STATUS_CHOICES = [
+        ('pending_review', 'Pending Review'),
+        ('approved',       'Approved'),
+        ('rejected',       'Rejected'),
+    ]
+
     service_id = models.CharField(max_length=10, unique=True, blank=True)
 
     title           = models.CharField(max_length=255)
@@ -60,8 +66,15 @@ class Package(models.Model):
     hospital_city        = models.CharField(max_length=100, blank=True, null=True)
     medical_expectations = models.TextField(blank=True, null=True)
 
-    # ← Who created this package
-    service_provider = models.ForeignKey(    # ← INSIDE the class
+    post_status = models.CharField(
+        max_length=20,
+        choices=POST_STATUS_CHOICES,
+        default='pending_review',
+        blank=True,
+        null=True,
+    )
+
+    service_provider = models.ForeignKey(
         ServiceProvider,
         on_delete=models.SET_NULL,
         null=True,
@@ -89,6 +102,7 @@ class Package(models.Model):
     def __str__(self):
         return f"{self.title} - {self.category}"
 
+
 class PackageImage(models.Model):
     package     = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='images')
     image       = CloudinaryField('image')
@@ -103,4 +117,3 @@ class PackageImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.package.title} (Order: {self.order})"
-    
