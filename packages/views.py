@@ -13,7 +13,6 @@ class PackageListView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Package.objects.filter(
             is_active=True,
-            post_status='approved'  # ✅ only approved packages go public
         ).prefetch_related('images')
         search = self.request.query_params.get('search', None)
         if search:
