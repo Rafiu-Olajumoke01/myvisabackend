@@ -49,7 +49,6 @@ class PackageListView(generics.ListAPIView):
 class PackageDetailView(generics.RetrieveAPIView):
     queryset = Package.objects.filter(
         is_active=True,
-        post_status='approved'  # ✅ only approved packages
     ).prefetch_related('images')
     serializer_class = PackageDetailSerializer
     permission_classes = [permissions.AllowAny]
