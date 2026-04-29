@@ -4,7 +4,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
 from .models import Application, Document
-from rest_framework import status, generics, permissions
 from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
 from .serializers import (
@@ -68,10 +67,10 @@ class ApplicationDetailView(generics.RetrieveAPIView):
     def get_queryset(self):
         user = self.request.user
         is_agent = hasattr(user, 'agent_profile')
-        
+
         if is_agent:
             return Application.objects.all().select_related('package', 'user').prefetch_related('documents')
-        
+
         return Application.objects.filter(
             user=user
         ).select_related('package', 'user').prefetch_related('documents')
@@ -86,6 +85,7 @@ class ApplicationDetailView(generics.RetrieveAPIView):
             }, status=status.HTTP_200_OK)
         except Application.DoesNotExist:
             return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+
 
 class ApplicationStartView(APIView):
     permission_classes = [permissions.IsAuthenticated]
@@ -115,7 +115,7 @@ class ApplicationStartView(APIView):
             'message': 'Application started! Your consultant has been assigned and a discovery meeting has been scheduled.'
         }, status=status.HTTP_200_OK)
 
-        
+
 class MeetingCancelView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -148,11 +148,7 @@ class MeetingCancelView(APIView):
 
 
 class MeetingCompleteView(APIView):
-    """
-    PATCH /api/applications/<id>/meeting/complete/
-    ✅ Changed from IsAdminUser to IsAuthenticated so agents can call it.
-    """
-    permission_classes = [permissions.IsAuthenticated]  # ✅ was IsAdminUser
+    permission_classes = [permissions.IsAuthenticated]
 
     def patch(self, request, id):
         try:
@@ -261,7 +257,6 @@ class ApplicationMessagesView(APIView):
     def get(self, request, id):
         from .models import Application, ApplicationMessage
         try:
-            # Clients can only see their own; agents can see any
             application = Application.objects.get(id=id)
         except Application.DoesNotExist:
             return Response({'error': 'Application not found.'}, status=404)
@@ -309,12 +304,8 @@ class ApplicationMessagesView(APIView):
         is_agent = hasattr(request.user, 'agent_profile')
         sender_role = 'consultant' if is_agent else 'client'
 
-        # Block clients from chatting if meeting not completed
-        if not is_agent and application.meeting_status != 'completed':
-            return Response(
-                {'error': 'Chat is locked until your discovery meeting is completed.'},
-                status=403
-            )
+        # ✅ REMOVED: meeting_status gate — chat is now always open
+        # Users can message directly without completing a discovery call first
 
         msg = ApplicationMessage.objects.create(
             application=application,
@@ -354,11 +345,7 @@ class ApplicationMessageFileView(APIView):
         is_agent = hasattr(request.user, 'agent_profile')
         sender_role = 'consultant' if is_agent else 'client'
 
-        if not is_agent and application.meeting_status != 'completed':
-            return Response(
-                {'error': 'Chat is locked until your discovery meeting is completed.'},
-                status=403
-            )
+        # ✅ REMOVED: meeting_status gate — file sharing now always open
 
         msg = ApplicationMessage.objects.create(
             application=application,
