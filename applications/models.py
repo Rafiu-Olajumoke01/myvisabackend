@@ -138,6 +138,15 @@ class ApplicationMessage(models.Model):
         ('consultant', 'Consultant'),
     ]
 
+    # ✅ ADD THIS — links the chat to an assigned provider session
+    chat_session = models.ForeignKey(
+        'calls.CallSession',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='application_messages'
+        )
+
     application = models.ForeignKey(
         Application,
         on_delete=models.CASCADE,

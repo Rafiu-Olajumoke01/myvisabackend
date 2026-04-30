@@ -261,7 +261,6 @@ class ApplicationMessagesView(APIView):
         except Application.DoesNotExist:
             return Response({'error': 'Application not found.'}, status=404)
 
-        # Permission check — client can only read their own
         is_agent = hasattr(request.user, 'agent_profile')
         if not is_agent and application.user != request.user:
             return Response({'error': 'Forbidden.'}, status=403)
@@ -291,6 +290,11 @@ class ApplicationMessagesView(APIView):
 
     def post(self, request, id):
         from .models import Application, ApplicationMessage
+        from calls.models import CallSession
+        from providers.models import ServiceProvider
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+
         try:
             application = Application.objects.get(id=id)
         except Application.DoesNotExist:
@@ -300,20 +304,63 @@ class ApplicationMessagesView(APIView):
         if not content:
             return Response({'error': 'Message content is required.'}, status=400)
 
-        # Determine sender role
         is_agent = hasattr(request.user, 'agent_profile')
         sender_role = 'consultant' if is_agent else 'client'
 
-        # ✅ REMOVED: meeting_status gate — chat is now always open
-        # Users can message directly without completing a discovery call first
+        # ✅ STEP 1 — Find or create a chat session
+        chat_session = None
 
+        if not is_agent:
+            existing = CallSession.objects.filter(
+                user=application.user,
+                application_messages__application=application,
+                status__in=['pending', 'accepted']
+            ).first()
+
+            if existing:
+                chat_session = existing
+            else:
+                provider = ServiceProvider.objects.filter(
+                    availability='available',
+                    is_active=True,
+                    status='approved'
+                ).order_by('updated_at').first()
+
+                if provider:
+                    chat_session = CallSession.objects.create(
+                        user=application.user,
+                        service_provider=provider,
+                        status='accepted'
+                    )
+
+        # ✅ STEP 2 — Save the message
         msg = ApplicationMessage.objects.create(
             application=application,
             sender=request.user,
             sender_role=sender_role,
             content=content,
             message_type='text',
+            chat_session=chat_session,
         )
+
+        # ✅ STEP 3 — Notify provider via WebSocket instantly
+        if chat_session and chat_session.service_provider:
+            try:
+                channel_layer = get_channel_layer()
+                provider_user_id = chat_session.service_provider.user_id
+                async_to_sync(channel_layer.group_send)(
+                    f"user_{provider_user_id}",
+                    {
+                        'type': 'new_chat_message',
+                        'application_id': str(application.id),
+                        'client_name': application.full_name,
+                        'message': content,
+                        'sender_role': sender_role,
+                        'created_at': msg.created_at.isoformat(),
+                    }
+                )
+            except Exception as e:
+                print(f"[WS notify failed]: {e}")
 
         return Response({
             'id':           str(msg.id),
@@ -323,8 +370,7 @@ class ApplicationMessagesView(APIView):
             'message_type': 'text',
             'created_at':   msg.created_at.isoformat(),
         }, status=201)
-
-
+    
 class ApplicationMessageFileView(APIView):
     """
     POST /api/applications/<id>/messages/file/  — send a file/document

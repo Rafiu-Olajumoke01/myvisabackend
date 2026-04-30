@@ -211,6 +211,15 @@ class CallConsumer(AsyncWebsocketConsumer):
     async def chat_unlocked(self, event):
         await self.send(json.dumps(event))
 
+    async def new_chat_message(self, event):
+        await self.send(json.dumps({
+            'type': 'new_chat_message',
+            'application_id': event['application_id'],
+            'client_name': event['client_name'],
+            'message': event['message'],
+            'sender_role': event['sender_role'],
+            'created_at': event['created_at'],
+        }))
     # ─────────────────────────────────────────
     # HELPERS
     # ─────────────────────────────────────────
