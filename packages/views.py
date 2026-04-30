@@ -13,6 +13,7 @@ class PackageListView(generics.ListAPIView):
     def get_queryset(self):
         queryset = Package.objects.filter(
             is_active=True,
+            post_status='approved',
         ).prefetch_related('images')
         search = self.request.query_params.get('search', None)
         if search:
@@ -49,6 +50,7 @@ class PackageListView(generics.ListAPIView):
 class PackageDetailView(generics.RetrieveAPIView):
     queryset = Package.objects.filter(
         is_active=True,
+        post_status='approved',
     ).prefetch_related('images')
     serializer_class = PackageDetailSerializer
     permission_classes = [permissions.AllowAny]
@@ -61,8 +63,6 @@ class PackageDetailView(generics.RetrieveAPIView):
             'package': serializer.data,
             'message': 'Package details retrieved successfully!'
         }, status=status.HTTP_200_OK)
-
-
 # ============================================
 # ADMIN ENDPOINTS
 # ============================================
