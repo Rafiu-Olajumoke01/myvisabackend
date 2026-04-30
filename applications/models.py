@@ -2,6 +2,7 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from packages.models import Package
+from providers.models import ServiceProvider  
 
 User = get_user_model()
 
@@ -27,6 +28,13 @@ class Application(models.Model):
         ('completed', 'Completed'),
     ]
 
+    service_provider = models.ForeignKey(
+        'providers.ServiceProvider',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='applications'
+    )
     # Relationship Fields
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='applications')
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name='applications')
@@ -173,3 +181,7 @@ class ApplicationMessage(models.Model):
 
     def __str__(self):
         return f"[{self.sender_role}] {self.application.full_name} — {self.created_at:%Y-%m-%d %H:%M}"
+
+
+
+

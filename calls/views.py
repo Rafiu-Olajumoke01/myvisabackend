@@ -345,43 +345,74 @@ class ClientsListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        from .models import CallSession
+        from applications.models import ApplicationMessage
         try:
             provider = request.user.sp_profile
-            sessions = CallSession.objects.filter(
-                service_provider=provider
-            ).select_related('user').order_by('-created_at')
+
+            # Find all applications assigned to this provider's user
+            # via messages where the SP sent or received messages
+            messages = ApplicationMessage.objects.filter(
+                sender_role='client'
+            ).select_related(
+                'application', 'application__user', 'sender'
+            ).order_by('-created_at')
 
             seen = set()
             clients = []
-            for s in sessions:
-                if s.user_id not in seen:
-                    seen.add(s.user_id)
-                    u = s.user
-                    eval_obj = None
-                    try:
-                        eval_obj = s.evaluation
-                    except Exception:
-                        pass
-                    latest_app = App.objects.filter(user=u).order_by('-submitted_at').first()
-                    clients.append({
-                        'id': u.id,
-                        'name': u.get_full_name() or u.email,
-                        'email': u.email,
-                        'phone': getattr(u, 'phone', ''),
-                        'country': getattr(u, 'country', ''),
-                        'total_calls': sessions.filter(user=u).count(),
-                        'last_call': s.created_at.isoformat(),
-                        'last_status': s.status,
-                        'readiness_score': eval_obj.readiness_score if eval_obj else None,
-                        'recommendation': eval_obj.recommendation if eval_obj else None,
-                        'latest_application_id': latest_app.id if latest_app else None,
-                    })
+
+            for msg in messages:
+                app = msg.application
+                user = app.user
+
+                if user.id in seen:
+                    continue
+
+                # Check if this provider is linked to this application
+                # via a CallSession OR just include all if provider has no filter
+                from .models import CallSession
+                linked = CallSession.objects.filter(
+                    user=user,
+                    service_provider=provider,
+                ).exists()
+
+                # Also check if provider is the assigned consultant
+                # (fallback: include if any approved provider and no specific link)
+                if not linked:
+                    # Check if there's NO other provider linked — meaning this SP
+                    # is the default handler
+                    any_session = CallSession.objects.filter(
+                        user=user,
+                        service_provider__isnull=False,
+                    ).exclude(service_provider=provider).exists()
+                    if any_session:
+                        continue  # belongs to another provider
+
+                seen.add(user.id)
+
+                latest_app = App.objects.filter(
+                    user=user
+                ).order_by('-submitted_at').first()
+
+                clients.append({
+                    'id': user.id,
+                    'name': user.get_full_name() or user.email,
+                    'email': user.email,
+                    'phone': getattr(user, 'phone', ''),
+                    'country': getattr(user, 'country', ''),
+                    'total_calls': CallSession.objects.filter(
+                        user=user, service_provider=provider
+                    ).count(),
+                    'last_call': msg.created_at.isoformat(),
+                    'last_status': 'active',
+                    'readiness_score': None,
+                    'recommendation': None,
+                    'latest_application_id': str(latest_app.id) if latest_app else None,
+                })
+
             return Response({'clients': clients, 'total': len(clients)})
         except Exception as e:
             print('ClientsListView error:', e)
             return Response({'clients': [], 'total': 0})
-
 
 class ClientDetailView(APIView):
     permission_classes = [IsAuthenticated]

@@ -101,12 +101,25 @@ class ApplicationStartView(APIView):
                 'error': 'Application has already been started'
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        from providers.models import ServiceProvider
+
         application.status = 'started'
-        application.consultant_name = 'Sarah Mitchell'
         application.consultant_title = 'Visa Consultant'
         application.meeting_date = request.data.get('meeting_date', None)
         application.meeting_time = request.data.get('meeting_time', '10:00 AM - 10:30 AM')
         application.meeting_status = 'scheduled'
+
+        provider = ServiceProvider.objects.filter(
+            is_active=True,
+            status='approved',
+        ).order_by('updated_at').first()
+
+        if provider:
+            application.service_provider = provider
+            application.consultant_name = provider.user.get_full_name() or provider.business_name
+        else:
+            application.consultant_name = 'Sarah Mitchell'
+
         application.save()
 
         serializer = ApplicationDetailSerializer(application)
@@ -248,10 +261,6 @@ class AdminApplicationListView(APIView):
 
 
 class ApplicationMessagesView(APIView):
-    """
-    GET  /api/applications/<id>/messages/  — fetch chat history
-    POST /api/applications/<id>/messages/  — send a text message
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request, id):
@@ -262,7 +271,9 @@ class ApplicationMessagesView(APIView):
             return Response({'error': 'Application not found.'}, status=404)
 
         is_agent = hasattr(request.user, 'agent_profile')
-        if not is_agent and application.user != request.user:
+        is_provider = hasattr(request.user, 'sp_profile')
+
+        if not is_agent and not is_provider and application.user != request.user:
             return Response({'error': 'Forbidden.'}, status=403)
 
         messages = ApplicationMessage.objects.filter(
@@ -290,8 +301,6 @@ class ApplicationMessagesView(APIView):
 
     def post(self, request, id):
         from .models import Application, ApplicationMessage
-        from calls.models import CallSession
-        from providers.models import ServiceProvider
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
 
@@ -305,45 +314,23 @@ class ApplicationMessagesView(APIView):
             return Response({'error': 'Message content is required.'}, status=400)
 
         is_agent = hasattr(request.user, 'agent_profile')
-        sender_role = 'consultant' if is_agent else 'client'
+        is_provider = hasattr(request.user, 'sp_profile')
+        sender_role = 'consultant' if (is_agent or is_provider) else 'client'
 
-        # ── STEP 1: Find or create a CallSession linked to this application ──
-        chat_session = None
-
-        if not is_agent:
-            chat_session = CallSession.objects.filter(
-                user=application.user,
-                status__in=['accepted', 'completed'],
-            ).order_by('-created_at').first()
-
-            if not chat_session:
-                provider = ServiceProvider.objects.filter(
-                    is_active=True,
-                    status='approved',
-                ).order_by('updated_at').first()
-
-                if provider:
-                    chat_session = CallSession.objects.create(
-                        user=application.user,
-                        service_provider=provider,
-                        status='accepted',
-                    )
-
-        # ── STEP 2: Save the message ──
+        # Save the message
         msg = ApplicationMessage.objects.create(
             application=application,
             sender=request.user,
             sender_role=sender_role,
             content=content,
             message_type='text',
-            chat_session=chat_session,
         )
 
-        # ── STEP 3: Notify provider via WebSocket ──
-        if chat_session and chat_session.service_provider:
+        # Notify provider via WebSocket (only when client sends)
+        if sender_role == 'client' and application.service_provider:
             try:
                 channel_layer = get_channel_layer()
-                provider_user_id = chat_session.service_provider.user_id
+                provider_user_id = application.service_provider.user_id
                 async_to_sync(channel_layer.group_send)(
                     f"user_{provider_user_id}",
                     {
@@ -370,9 +357,6 @@ class ApplicationMessagesView(APIView):
 
 
 class ApplicationMessageFileView(APIView):
-    """
-    POST /api/applications/<id>/messages/file/  — send a file/document
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
@@ -387,7 +371,8 @@ class ApplicationMessageFileView(APIView):
             return Response({'error': 'No file provided.'}, status=400)
 
         is_agent = hasattr(request.user, 'agent_profile')
-        sender_role = 'consultant' if is_agent else 'client'
+        is_provider = hasattr(request.user, 'sp_profile')
+        sender_role = 'consultant' if (is_agent or is_provider) else 'client'
 
         msg = ApplicationMessage.objects.create(
             application=application,
