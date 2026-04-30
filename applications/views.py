@@ -307,33 +307,29 @@ class ApplicationMessagesView(APIView):
         is_agent = hasattr(request.user, 'agent_profile')
         sender_role = 'consultant' if is_agent else 'client'
 
-        # ✅ STEP 1 — Find or create a chat session
+        # ── STEP 1: Find or create a CallSession linked to this application ──
         chat_session = None
 
         if not is_agent:
-            existing = CallSession.objects.filter(
+            chat_session = CallSession.objects.filter(
                 user=application.user,
-                application_messages__application=application,
-                status__in=['pending', 'accepted']
-            ).first()
+                status__in=['accepted', 'completed'],
+            ).order_by('-created_at').first()
 
-            if existing:
-                chat_session = existing
-            else:
+            if not chat_session:
                 provider = ServiceProvider.objects.filter(
-                    availability='available',
                     is_active=True,
-                    status='approved'
+                    status='approved',
                 ).order_by('updated_at').first()
 
                 if provider:
                     chat_session = CallSession.objects.create(
                         user=application.user,
                         service_provider=provider,
-                        status='accepted'
+                        status='accepted',
                     )
 
-        # ✅ STEP 2 — Save the message
+        # ── STEP 2: Save the message ──
         msg = ApplicationMessage.objects.create(
             application=application,
             sender=request.user,
@@ -343,7 +339,7 @@ class ApplicationMessagesView(APIView):
             chat_session=chat_session,
         )
 
-        # ✅ STEP 3 — Notify provider via WebSocket instantly
+        # ── STEP 3: Notify provider via WebSocket ──
         if chat_session and chat_session.service_provider:
             try:
                 channel_layer = get_channel_layer()
@@ -353,12 +349,13 @@ class ApplicationMessagesView(APIView):
                     {
                         'type': 'new_chat_message',
                         'application_id': str(application.id),
-                        'client_name': application.full_name,
+                        'client_name': application.user.get_full_name() or application.user.email,
                         'message': content,
                         'sender_role': sender_role,
                         'created_at': msg.created_at.isoformat(),
                     }
                 )
+                print(f"[WS] ✅ Notified provider user_{provider_user_id}")
             except Exception as e:
                 print(f"[WS notify failed]: {e}")
 
@@ -370,7 +367,8 @@ class ApplicationMessagesView(APIView):
             'message_type': 'text',
             'created_at':   msg.created_at.isoformat(),
         }, status=201)
-    
+
+
 class ApplicationMessageFileView(APIView):
     """
     POST /api/applications/<id>/messages/file/  — send a file/document
@@ -390,8 +388,6 @@ class ApplicationMessageFileView(APIView):
 
         is_agent = hasattr(request.user, 'agent_profile')
         sender_role = 'consultant' if is_agent else 'client'
-
-        # ✅ REMOVED: meeting_status gate — file sharing now always open
 
         msg = ApplicationMessage.objects.create(
             application=application,
