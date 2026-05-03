@@ -6,6 +6,7 @@ from .views import (
     AdminUserListView,
     PasswordResetRequestView,
     PasswordResetConfirmView,
+    GoogleAuthView, 
 )
 
 urlpatterns = [
@@ -17,4 +18,5 @@ urlpatterns = [
     # Forgot password
     path('forgot-password/', PasswordResetRequestView.as_view(), name='forgot-password'),
     path('reset-password/', PasswordResetConfirmView.as_view(), name='reset-password'),
+    path('google/', GoogleAuthView.as_view(), name='google-auth'), 
 ]

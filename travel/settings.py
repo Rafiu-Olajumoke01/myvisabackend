@@ -253,3 +253,5 @@ CSRF_TRUSTED_ORIGINS = [
     'https://myvisafrontend-ip5h.vercel.app',
     'http://localhost:3000',
 ]
+
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '363406370992-ndgg6i6udp39oq15b9fkkeuu42gaak96.apps.googleusercontent.com')
