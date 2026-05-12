@@ -35,7 +35,7 @@ class InfluencerApplySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Influencer
-        fields = ['full_name', 'email', 'phone', 'platform', 'handle', 'audience_size', 'why']
+        fields = ['full_name', 'email', 'phone', 'platform', 'handle', 'audience_size', 'why', 'promo_code']
     
     def validate_promo_code(self, value):
         if not value:  # if they left it blank, skip — model will auto-generate
