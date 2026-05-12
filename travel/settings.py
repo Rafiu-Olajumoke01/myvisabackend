@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'applications',
     'bookmarks',
     'reviews',
+    'influencers',
 ]
 
 MIDDLEWARE = [
