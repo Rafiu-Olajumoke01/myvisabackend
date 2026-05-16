@@ -21,7 +21,7 @@ class Influencer(models.Model):
     full_name = models.CharField(max_length=200)
     email = models.EmailField()
     phone = models.CharField(max_length=20)
-    platform = models.CharField(max_length=50)
+    platform = models.CharField(max_length=500)
     handle = models.CharField(max_length=100)
     audience_size = models.CharField(max_length=20)
     why = models.TextField()
