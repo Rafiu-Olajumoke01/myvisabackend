@@ -13,6 +13,7 @@ from .serializers import (
     DocumentSerializer,
 )
 from packages.models import Package
+from influencers.models import Influencer, InfluencerBooking
 
 
 class ApplicationListView(generics.ListAPIView):
@@ -43,13 +44,34 @@ class ApplicationCreateView(APIView):
             return Response({'error': 'package is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            Package.objects.get(id=package_id, is_active=True)
+            package = Package.objects.get(id=package_id, is_active=True)
         except Package.DoesNotExist:
             return Response({'error': 'Package not found'}, status=status.HTTP_404_NOT_FOUND)
 
         serializer = ApplicationCreateSerializer(data=request.data)
         if serializer.is_valid():
             application = serializer.save(user=request.user)
+
+            # 👇 Promo code logic
+            promo_code = request.data.get('promo_code', '').strip().upper()
+            if promo_code:
+                try:
+                    influencer = Influencer.objects.get(promo_code=promo_code, status='approved')
+                    commission = (influencer.commission_rate / 100) * package.price
+                    InfluencerBooking.objects.create(
+                        influencer=influencer,
+                        client=request.user,
+                        client_name=request.user.get_full_name() or request.user.email,
+                        package_name=package.title,
+                        package_type=package.category or 'tourist',
+                        promo_code_used=promo_code,
+                        booking_amount=package.price,
+                        commission=commission,
+                        status='pending',
+                    )
+                except Influencer.DoesNotExist:
+                    pass  # invalid promo code — just ignore, don't block the application
+
             detail_serializer = ApplicationDetailSerializer(application)
             return Response({
                 'application': detail_serializer.data,
@@ -57,7 +79,6 @@ class ApplicationCreateView(APIView):
             }, status=status.HTTP_201_CREATED)
 
         return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
 
 class ApplicationDetailView(generics.RetrieveAPIView):
     serializer_class = ApplicationDetailSerializer
