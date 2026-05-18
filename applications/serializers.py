@@ -1,7 +1,6 @@
 # applications/serializers.py
 from rest_framework import serializers
-from .models import Application, Document
-
+from .models import Application, Document, PackageRecommendation
 
 # ─── Document Serializer ──────────────────────────────────────────────────────
 
@@ -179,3 +178,29 @@ class MeetingCompleteSerializer(serializers.ModelSerializer):
         model = Application
         fields = ['meeting_status', 'status']
         read_only_fields = ['meeting_status', 'status']
+
+class PackageRecommendationSerializer(serializers.ModelSerializer):
+    package_title = serializers.CharField(source='package.title', read_only=True)
+    package_country = serializers.CharField(source='package.country', read_only=True)
+    package_id = serializers.IntegerField(source='package.id', read_only=True)
+    recommended_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PackageRecommendation
+        fields = [
+            'id',
+            'user',
+            'package_id',
+            'package_title',
+            'package_country',
+            'recommended_by_name',
+            'status',
+            'admin_note',
+            'created_at',
+            'updated_at',
+        ]
+
+    def get_recommended_by_name(self, obj):
+        if obj.recommended_by:
+            return obj.recommended_by.get_full_name() or obj.recommended_by.email
+        return 'Admin'

@@ -13,6 +13,8 @@ from .views import (
     AdminApplicationListView,
     ApplicationMessagesView,
     ApplicationMessageFileView,
+    AdminRecommendPackageView,
+    UserRecommendationsView,
 )
 
 urlpatterns = [
@@ -37,5 +39,9 @@ urlpatterns = [
 
     path('<int:id>/messages/', ApplicationMessagesView.as_view(), name='application-messages'),
     path('<int:id>/messages/file/', ApplicationMessageFileView.as_view(), name='application-messages-file'),
+
+    path('admin/recommend/<int:user_id>/', AdminRecommendPackageView.as_view(), name='recommend-package'),
+    path('recommendations/', UserRecommendationsView.as_view(), name='user-recommendations'),
+    path('recommendations/<int:rec_id>/', UserRecommendationsView.as_view(), name='user-recommendation-update'),
 
 ]

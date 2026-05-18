@@ -182,6 +182,39 @@ class ApplicationMessage(models.Model):
     def __str__(self):
         return f"[{self.sender_role}] {self.application.full_name} — {self.created_at:%Y-%m-%d %H:%M}"
 
+class PackageRecommendation(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('viewed', 'Viewed'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+    ]
 
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='recommendations'
+    )
+    package = models.ForeignKey(
+        Package,
+        on_delete=models.CASCADE,
+        related_name='recommendations'
+    )
+    recommended_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='recommendations_made'
+    )
+    admin_note = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.package.title} → {self.user.email}"
 
 

@@ -14,7 +14,10 @@ from .serializers import (
 )
 from packages.models import Package
 from influencers.models import Influencer, InfluencerBooking
-
+from .models import PackageRecommendation
+from .serializers import PackageRecommendationSerializer
+from django.contrib.auth import get_user_model
+User = get_user_model()
 
 class ApplicationListView(generics.ListAPIView):
     serializer_class = ApplicationListSerializer
@@ -413,3 +416,86 @@ class ApplicationMessageFileView(APIView):
             'file_name':    msg.file_name,
             'created_at':   msg.created_at.isoformat(),
         }, status=201)
+    
+class AdminRecommendPackageView(APIView):
+    """Admin recommends a package to a specific applicant"""
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, user_id):
+        package_id = request.data.get('package_id')
+        admin_note = request.data.get('admin_note', '')
+
+        if not package_id:
+            return Response(
+                {'error': 'package_id is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        try:
+            package = Package.objects.get(id=package_id, is_active=True)
+        except Package.DoesNotExist:
+            return Response(
+                {'error': 'Package not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        recommendation = PackageRecommendation.objects.create(
+            user=target_user,
+            package=package,
+            recommended_by=request.user,
+            admin_note=admin_note,
+            status='pending'
+        )
+
+        serializer = PackageRecommendationSerializer(recommendation)
+        return Response({
+            'recommendation': serializer.data,
+            'message': f'Package "{package.title}" recommended to {target_user.email}'
+        }, status=status.HTTP_201_CREATED)
+
+
+class UserRecommendationsView(APIView):
+    """User sees all packages recommended to them"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        recommendations = PackageRecommendation.objects.filter(
+            user=request.user
+        ).select_related('package', 'recommended_by')
+
+        serializer = PackageRecommendationSerializer(recommendations, many=True)
+        return Response({
+            'recommendations': serializer.data,
+            'count': recommendations.count()
+        }, status=status.HTTP_200_OK)
+
+    def patch(self, request, rec_id=None):
+        """User marks a recommendation as viewed/accepted/declined"""
+        try:
+            rec = PackageRecommendation.objects.get(id=rec_id, user=request.user)
+        except PackageRecommendation.DoesNotExist:
+            return Response(
+                {'error': 'Recommendation not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        new_status = request.data.get('status')
+        if new_status not in ['viewed', 'accepted', 'declined']:
+            return Response(
+                {'error': 'Invalid status'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        rec.status = new_status
+        rec.save()
+        return Response({
+            'message': f'Recommendation marked as {new_status}'
+        }, status=status.HTTP_200_OK)
