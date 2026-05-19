@@ -1,7 +1,7 @@
 # calls/models.py
 from django.db import models
 from django.conf import settings
-# from providers.models import ServiceProvider  ← keep commented out
+from django.contrib.auth import get_user_model
 import uuid
 
 
@@ -91,3 +91,4 @@ class ChatMessage(models.Model):
 
     class Meta:
         ordering = ['created_at']
+

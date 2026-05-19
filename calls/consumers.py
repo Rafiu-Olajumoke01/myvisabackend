@@ -181,6 +181,41 @@ class CallConsumer(AsyncWebsocketConsumer):
                 'messages': messages
             }))
 
+        # ───────── RECOMMEND PACKAGE ─────────
+        elif event_type == 'recommend_package':
+
+            target_user_id = data.get('target_user_id')
+            package = data.get('package')
+            session_id = data.get('session_id')
+
+            if not target_user_id or not package:
+                return
+
+            if not self.user.is_staff:
+                return
+
+            await self.save_recommendation(target_user_id, package, self.user)
+
+            payload = {
+                'type': 'package_recommendation',
+                'package': package,
+                'recommended_by': self.get_display_name(self.user),
+                'session_id': session_id,
+            }
+
+            await self.channel_layer.group_send(
+                f"user_{target_user_id}", {
+                    'type': 'package_recommendation',
+                    **payload
+                }
+            )
+
+            await self.send(text_data=json.dumps({
+                'type': 'recommend_success',
+                'target_user_id': target_user_id,
+                'package_title': package.get('title'),
+            }))
+
     # ─────────────────────────────────────────
     # CHANNEL EVENTS
     # ─────────────────────────────────────────
@@ -201,13 +236,19 @@ class CallConsumer(AsyncWebsocketConsumer):
 
     async def chat_message(self, event):
         await self.send(json.dumps(event))
+
+    async def package_recommendation(self, event):
+        await self.send(json.dumps(event))
+
     async def verification_call_scheduled(self, event):
         await self.send(json.dumps(event))
 
     async def sp_application_update(self, event):
         await self.send(json.dumps(event))
+
     async def new_notification(self, event):
         await self.send(json.dumps(event))
+
     async def chat_unlocked(self, event):
         await self.send(json.dumps(event))
 
@@ -220,6 +261,7 @@ class CallConsumer(AsyncWebsocketConsumer):
             'sender_role': event['sender_role'],
             'created_at': event['created_at'],
         }))
+
     # ─────────────────────────────────────────
     # HELPERS
     # ─────────────────────────────────────────
@@ -315,3 +357,19 @@ class CallConsumer(AsyncWebsocketConsumer):
             }
             for m in messages
         ]
+
+    @database_sync_to_async
+    def save_recommendation(self, target_user_id, package, admin_user):
+        from applications.models import PackageRecommendation
+        from packages.models import Package
+        try:
+            pkg = Package.objects.get(id=package.get('id'))
+            PackageRecommendation.objects.create(
+                user_id=target_user_id,
+                package=pkg,
+                recommended_by=admin_user,
+                admin_note='Recommended via chat',
+                status='pending'
+            )
+        except Package.DoesNotExist:
+            pass
