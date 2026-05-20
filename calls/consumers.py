@@ -1,4 +1,5 @@
 import json
+import datetime
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 
@@ -30,8 +31,12 @@ class CallConsumer(AsyncWebsocketConsumer):
         if self.is_provider:
             await self.channel_layer.group_add('providers_room', self.channel_name)
 
+        # ✅ Admin joins admin_room
+        if user.is_staff:
+            await self.channel_layer.group_add('admin_room', self.channel_name)
+
         await self.accept()
-        print(f"[WS] Connected user={user.id} provider={self.is_provider}")
+        print(f"[WS] Connected user={user.id} provider={self.is_provider} staff={user.is_staff}")
 
     # ─────────────────────────────────────────
     # DISCONNECT
@@ -42,9 +47,12 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         if getattr(self, 'is_provider', False):
             await self.channel_layer.group_discard('providers_room', self.channel_name)
-
             if self.user:
                 await self.set_provider_status(self.user, 'available')
+
+        # ✅ Admin leaves admin_room
+        if self.user and self.user.is_staff:
+            await self.channel_layer.group_discard('admin_room', self.channel_name)
 
         user_id = self.user.id if self.user else "unknown"
         print(f"[WS] Disconnected user={user_id}")
@@ -60,9 +68,7 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── CALL REQUEST ─────────
         if event_type == 'call_request':
-
             session = await self.create_session(self.user)
-
             await self.channel_layer.group_send('providers_room', {
                 'type': 'call_request',
                 'session_id': str(session.id),
@@ -73,16 +79,13 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── CALL ACCEPTED ─────────
         elif event_type == 'call_accepted':
-
             session_id = data.get('session_id')
             meet_link = data.get('meet_link', '')
-
             session = await self.get_session(session_id)
             if not session:
                 return
 
             success = await self.attach_provider_to_session(session, self.user)
-
             if not success:
                 await self.send(text_data=json.dumps({
                     'type': 'call_accept_failed',
@@ -92,7 +95,6 @@ class CallConsumer(AsyncWebsocketConsumer):
                 return
 
             user_group = f"user_{session.user_id}"
-
             await self.channel_layer.group_send(user_group, {
                 'type': 'call_accepted',
                 'session_id': session_id,
@@ -102,13 +104,10 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── CALL DECLINED ─────────
         elif event_type == 'call_declined':
-
             session_id = data.get('session_id')
             session = await self.get_session(session_id)
-
             if session:
                 user_group = f"user_{session.user_id}"
-
                 await self.channel_layer.group_send(user_group, {
                     'type': 'call_declined',
                     'session_id': session_id,
@@ -117,24 +116,19 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── CALL COMPLETED ─────────
         elif event_type == 'call_completed':
-
             session_id = data.get('session_id')
             session = await self.get_session(session_id)
-
             if session:
                 await self.mark_session_completed(session)
-
                 user_group = f"user_{session.user_id}"
-
                 await self.channel_layer.group_send(user_group, {
                     'type': 'call_completed',
                     'session_id': session_id,
                     'provider_name': self.get_display_name(self.user),
                 })
 
-        # ───────── CHAT MESSAGE ─────────
+        # ───────── CALL CHAT MESSAGE (session-based) ─────────
         elif event_type == 'chat_message':
-
             session_id = data.get('session_id')
             message = data.get('message', '').strip()
 
@@ -155,13 +149,11 @@ class CallConsumer(AsyncWebsocketConsumer):
                 'sender_name': self.get_display_name(self.user),
             }
 
-            # provider sends to user
             if self.is_provider:
                 await self.channel_layer.group_send(
                     f"user_{session.user_id}", payload
                 )
             else:
-                # user sends to provider
                 if session.service_provider:
                     await self.channel_layer.group_send(
                         f"user_{session.service_provider.user_id}", payload
@@ -171,10 +163,8 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── CHAT HISTORY ─────────
         elif event_type == 'chat_history':
-
             session_id = data.get('session_id')
             messages = await self.get_chat_history(session_id)
-
             await self.send(text_data=json.dumps({
                 'type': 'chat_history',
                 'session_id': session_id,
@@ -183,7 +173,6 @@ class CallConsumer(AsyncWebsocketConsumer):
 
         # ───────── RECOMMEND PACKAGE ─────────
         elif event_type == 'recommend_package':
-
             target_user_id = data.get('target_user_id')
             package = data.get('package')
             session_id = data.get('session_id')
@@ -215,6 +204,43 @@ class CallConsumer(AsyncWebsocketConsumer):
                 'target_user_id': target_user_id,
                 'package_title': package.get('title'),
             }))
+
+        # ───────── NEW CHAT MESSAGE (admin ↔ user application chat) ─────────
+        elif event_type == 'new_chat_message':
+            application_id = data.get('application_id')
+            message = data.get('message', '').strip()
+            target_user_id = data.get('target_user_id')
+            sender_role = data.get('sender_role', 'consultant')
+
+            if not message:
+                return
+
+            payload = {
+                'type': 'new_chat_message',
+                'application_id': application_id,
+                'message': message,
+                'sender_role': sender_role,
+                'client_name': self.get_display_name(self.user),
+                'created_at': datetime.datetime.now().isoformat(),
+            }
+
+            # ✅ Admin sending to user
+            if sender_role == 'consultant' and target_user_id:
+                await self.channel_layer.group_send(
+                    f"user_{target_user_id}", {
+                        'type': 'new_chat_message',
+                        **payload
+                    }
+                )
+
+            # ✅ User sending to admin_room
+            elif sender_role == 'client':
+                await self.channel_layer.group_send(
+                    'admin_room', {
+                        'type': 'new_chat_message',
+                        **payload
+                    }
+                )
 
     # ─────────────────────────────────────────
     # CHANNEL EVENTS
@@ -252,6 +278,7 @@ class CallConsumer(AsyncWebsocketConsumer):
     async def chat_unlocked(self, event):
         await self.send(json.dumps(event))
 
+    # ✅ Handles incoming new_chat_message from channel layer
     async def new_chat_message(self, event):
         await self.send(json.dumps({
             'type': 'new_chat_message',
@@ -275,7 +302,6 @@ class CallConsumer(AsyncWebsocketConsumer):
     # ─────────────────────────────────────────
     # DB HELPERS
     # ─────────────────────────────────────────
-
     @database_sync_to_async
     def check_if_provider(self, user):
         from providers.models import ServiceProvider
@@ -301,10 +327,8 @@ class CallConsumer(AsyncWebsocketConsumer):
     def attach_provider_to_session(self, session, user):
         try:
             provider = user.sp_profile
-
             if session.status == 'accepted':
                 return False
-
             session.service_provider = provider
             session.status = 'accepted'
             session.save(update_fields=['service_provider', 'status'])
@@ -318,7 +342,6 @@ class CallConsumer(AsyncWebsocketConsumer):
             provider = session.service_provider
             provider.availability = 'available'
             provider.save(update_fields=['availability'])
-
         session.status = 'completed'
         session.save(update_fields=['status'])
 
@@ -343,11 +366,9 @@ class CallConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def get_chat_history(self, session_id):
         from .models import ChatMessage
-
         messages = ChatMessage.objects.filter(
             session_id=session_id
         ).select_related('sender').order_by('created_at')
-
         return [
             {
                 'sender_id': str(m.sender_id),
