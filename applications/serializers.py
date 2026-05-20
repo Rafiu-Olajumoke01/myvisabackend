@@ -38,12 +38,7 @@ class DocumentSerializer(serializers.ModelSerializer):
 
 
 # ─── Application Serializers ──────────────────────────────────────────────────
-
 class ApplicationCreateSerializer(serializers.ModelSerializer):
-    """
-    Used when a student first creates an application.
-    Status starts as 'not_started' by default.
-    """
     class Meta:
         model = Application
         fields = [
@@ -58,31 +53,21 @@ class ApplicationCreateSerializer(serializers.ModelSerializer):
             'city',
             'country',
         ]
-
-
-class ApplicationListSerializer(serializers.ModelSerializer):
-    """
-    Used when listing all applications for a user (summary view)
-    """
-    package_title = serializers.CharField(source='package.title', read_only=True)
-    package_country = serializers.CharField(source='package.country', read_only=True)
-    status_display = serializers.CharField(source='get_status_display', read_only=True)
-    documents_count = serializers.IntegerField(source='documents.count', read_only=True)
-
-    class Meta:
-        model = Application
-        fields = [
-            'id',
-            'package',
-            'package_title',
-            'package_country',
-            'full_name',
-            'status',
-            'status_display',
-            'documents_count',
-            'submitted_at',
-            'updated_at',
-        ]
+    
+    # ✅ Make package optional
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['package'].required = False
+        self.fields['package'].allow_null = True
+        self.fields['full_name'].required = False
+        self.fields['email'].required = False
+        self.fields['phone'].required = False
+        self.fields['nationality'].required = False
+        self.fields['passport_number'].required = False
+        self.fields['date_of_birth'].required = False
+        self.fields['address'].required = False
+        self.fields['city'].required = False
+        self.fields['country'].required = False
 
 
 class ApplicationDetailSerializer(serializers.ModelSerializer):

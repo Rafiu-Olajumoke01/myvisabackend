@@ -3,89 +3,106 @@ from rest_framework import status, generics, permissions
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Application, Document
 from rest_framework.permissions import IsAuthenticated
 from django.conf import settings
+from django.contrib.auth import get_user_model
+
+from .models import Application, Document, ApplicationMessage, PackageRecommendation
 from .serializers import (
     ApplicationCreateSerializer,
-    ApplicationListSerializer,
+    ApplicationStartSerializer, 
     ApplicationDetailSerializer,
     DocumentSerializer,
+    PackageRecommendationSerializer,
 )
 from packages.models import Package
 from influencers.models import Influencer, InfluencerBooking
-from .models import PackageRecommendation
-from .serializers import PackageRecommendationSerializer
-from django.contrib.auth import get_user_model
+
 User = get_user_model()
 
+
+# ---------------------------------------------------------------------------
+# Application Views
+# ---------------------------------------------------------------------------
+
 class ApplicationListView(generics.ListAPIView):
-    serializer_class = ApplicationListSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ApplicationStartSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Application.objects.filter(
-            user=self.request.user
-        ).select_related('package').prefetch_related('documents')
+        return (
+            Application.objects
+            .filter(user=self.request.user)
+            .select_related('package')
+            .prefetch_related('documents')
+        )
 
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
-        return Response({
-            'applications': serializer.data,
-            'count': queryset.count(),
-            'message': 'Applications retrieved successfully!'
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'applications': serializer.data,
+                'count': queryset.count(),
+                'message': 'Applications retrieved successfully!',
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ApplicationCreateView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        package_id = request.data.get('package')
-        if not package_id:
-            return Response({'error': 'package is required'}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            package = Package.objects.get(id=package_id, is_active=True)
-        except Package.DoesNotExist:
-            return Response({'error': 'Package not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        # package is optional — no required check
         serializer = ApplicationCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            application = serializer.save(user=request.user)
+        if not serializer.is_valid():
+            return Response(
+                {'errors': serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-            # 👇 Promo code logic
-            promo_code = request.data.get('promo_code', '').strip().upper()
-            if promo_code:
-                try:
-                    influencer = Influencer.objects.get(promo_code=promo_code, status='approved')
-                    commission = (influencer.commission_rate / 100) * package.price
-                    InfluencerBooking.objects.create(
-                        influencer=influencer,
-                        client=request.user,
-                        client_name=request.user.get_full_name() or request.user.email,
-                        package_name=package.title,
-                        package_type=package.category or 'tourist',
-                        promo_code_used=promo_code,
-                        booking_amount=package.price,
-                        commission=commission,
-                        status='pending',
-                    )
-                except Influencer.DoesNotExist:
-                    pass  # invalid promo code — just ignore, don't block the application
+        application = serializer.save(user=request.user)
 
-            detail_serializer = ApplicationDetailSerializer(application)
-            return Response({
+        # Promo code logic — only runs if package was provided
+        package_id = request.data.get('package')
+        if package_id:
+            try:
+                package = Package.objects.get(id=package_id, is_active=True)
+                promo_code = request.data.get('promo_code', '').strip().upper()
+                if promo_code:
+                    try:
+                        influencer = Influencer.objects.get(promo_code=promo_code, status='approved')
+                        commission = (influencer.commission_rate / 100) * package.price
+                        InfluencerBooking.objects.create(
+                            influencer=influencer,
+                            client=request.user,
+                            client_name=request.user.get_full_name() or request.user.email,
+                            package_name=package.title,
+                            package_type=package.category or 'tourist',
+                            promo_code_used=promo_code,
+                            booking_amount=package.price,
+                            commission=commission,
+                            status='pending',
+                        )
+                    except Influencer.DoesNotExist:
+                        pass
+            except Package.DoesNotExist:
+                pass
+
+        detail_serializer = ApplicationDetailSerializer(application)
+        return Response(
+            {
                 'application': detail_serializer.data,
-                'message': 'Application created successfully! Click Start Application to begin.'
-            }, status=status.HTTP_201_CREATED)
+                'message': 'Application created successfully! Click Start Application to begin.',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
-        return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
 class ApplicationDetailView(generics.RetrieveAPIView):
     serializer_class = ApplicationDetailSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     lookup_field = 'id'
 
     def get_queryset(self):
@@ -93,37 +110,54 @@ class ApplicationDetailView(generics.RetrieveAPIView):
         is_agent = hasattr(user, 'agent_profile')
 
         if is_agent:
-            return Application.objects.all().select_related('package', 'user').prefetch_related('documents')
+            return (
+                Application.objects.all()
+                .select_related('package', 'user')
+                .prefetch_related('documents')
+            )
 
-        return Application.objects.filter(
-            user=user
-        ).select_related('package', 'user').prefetch_related('documents')
+        return (
+            Application.objects
+            .filter(user=user)
+            .select_related('package', 'user')
+            .prefetch_related('documents')
+        )
 
     def retrieve(self, request, *args, **kwargs):
         try:
             instance = self.get_object()
             serializer = self.get_serializer(instance)
-            return Response({
-                'application': serializer.data,
-                'message': 'Application details retrieved successfully!'
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {
+                    'application': serializer.data,
+                    'message': 'Application details retrieved successfully!',
+                },
+                status=status.HTTP_200_OK,
+            )
         except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
 
 class ApplicationStartView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
         try:
             application = Application.objects.get(id=id, user=request.user)
         except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         if application.status != 'not_started':
-            return Response({
-                'error': 'Application has already been started'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': 'Application has already been started'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         from providers.models import ServiceProvider
 
@@ -133,10 +167,12 @@ class ApplicationStartView(APIView):
         application.meeting_time = request.data.get('meeting_time', '10:00 AM - 10:30 AM')
         application.meeting_status = 'scheduled'
 
-        provider = ServiceProvider.objects.filter(
-            is_active=True,
-            status='approved',
-        ).order_by('updated_at').first()
+        provider = (
+            ServiceProvider.objects
+            .filter(is_active=True, status='approved')
+            .order_by('updated_at')
+            .first()
+        )
 
         if provider:
             application.service_provider = provider
@@ -147,130 +183,41 @@ class ApplicationStartView(APIView):
         application.save()
 
         serializer = ApplicationDetailSerializer(application)
-        return Response({
-            'application': serializer.data,
-            'message': 'Application started! Your consultant has been assigned and a discovery meeting has been scheduled.'
-        }, status=status.HTTP_200_OK)
-
-
-class MeetingCancelView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def patch(self, request, id):
-        try:
-            application = Application.objects.get(id=id, user=request.user)
-        except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        if not application.can_cancel_meeting:
-            return Response({
-                'error': 'You have used all 3 cancellations and can no longer cancel this meeting.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if application.meeting_status == 'completed':
-            return Response({
-                'error': 'This meeting has already been completed and cannot be cancelled.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        application.meeting_status = 'cancelled'
-        application.cancellations_used += 1
-        application.save()
-
-        serializer = ApplicationDetailSerializer(application)
-        return Response({
-            'application': serializer.data,
-            'cancellations_left': application.cancellations_left,
-            'message': f'Meeting cancelled. You have {application.cancellations_left} cancellation(s) remaining.'
-        }, status=status.HTTP_200_OK)
-
-
-class MeetingCompleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def patch(self, request, id):
-        try:
-            application = Application.objects.get(id=id)
-        except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        if application.meeting_status == 'completed':
-            return Response({
-                'error': 'Meeting is already marked as completed.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        if application.status == 'not_started':
-            return Response({
-                'error': 'Application has not been started yet.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        application.meeting_status = 'completed'
-        application.status = 'processing'
-        application.save()
-
-        serializer = ApplicationDetailSerializer(application)
-        return Response({
-            'application': serializer.data,
-            'message': 'Discovery call completed! Chat is now unlocked for the client.'
-        }, status=status.HTTP_200_OK)
-
-
-class DocumentUploadView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def post(self, request, id):
-        try:
-            application = Application.objects.get(id=id, user=request.user)
-        except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = DocumentSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save(application=application)
-            return Response({
-                'document': serializer.data,
-                'message': 'Document uploaded successfully!'
-            }, status=status.HTTP_201_CREATED)
-
-        return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class DocumentDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
-
-    def delete(self, request, id, doc_id):
-        try:
-            application = Application.objects.get(id=id, user=request.user)
-        except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        try:
-            document = Document.objects.get(id=doc_id, application=application)
-        except Document.DoesNotExist:
-            return Response({'error': 'Document not found'}, status=status.HTTP_404_NOT_FOUND)
-
-        document.file.delete(save=False)
-        document.delete()
-
-        return Response({'message': 'Document deleted successfully!'}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'application': serializer.data,
+                'message': (
+                    'Application started! Your consultant has been assigned '
+                    'and a discovery meeting has been scheduled.'
+                ),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ApplicationDeleteView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def delete(self, request, id):
         try:
             application = Application.objects.get(id=id, user=request.user)
         except Application.DoesNotExist:
-            return Response({'error': 'Application not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         if application.status != 'not_started':
-            return Response({
-                'error': f'Cannot delete application with status: {application.get_status_display()}'
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {'error': f'Cannot delete application with status: {application.get_status_display()}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         application.delete()
-        return Response({'message': 'Application deleted successfully!'}, status=status.HTTP_200_OK)
+        return Response(
+            {'message': 'Application deleted successfully!'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class AdminApplicationListView(APIView):
@@ -278,17 +225,165 @@ class AdminApplicationListView(APIView):
 
     def get(self, request):
         applications = Application.objects.all().select_related('package', 'user')
-        serializer = ApplicationListSerializer(applications, many=True)
-        return Response({
-            'applications': serializer.data,
-        }, status=status.HTTP_200_OK)
+        serializer = ApplicationStartSerializer(applications, many=True)
+        return Response(
+            {'applications': serializer.data},
+            status=status.HTTP_200_OK,
+        )
 
+
+# ---------------------------------------------------------------------------
+# Meeting Views
+# ---------------------------------------------------------------------------
+
+class MeetingCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, id):
+        try:
+            application = Application.objects.get(id=id, user=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not application.can_cancel_meeting:
+            return Response(
+                {'error': 'You have used all 3 cancellations and can no longer cancel this meeting.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if application.meeting_status == 'completed':
+            return Response(
+                {'error': 'This meeting has already been completed and cannot be cancelled.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        application.meeting_status = 'cancelled'
+        application.cancellations_used += 1
+        application.save()
+
+        serializer = ApplicationDetailSerializer(application)
+        return Response(
+            {
+                'application': serializer.data,
+                'cancellations_left': application.cancellations_left,
+                'message': f'Meeting cancelled. You have {application.cancellations_left} cancellation(s) remaining.',
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class MeetingCompleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, id):
+        try:
+            application = Application.objects.get(id=id)
+        except Application.DoesNotExist:
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if application.meeting_status == 'completed':
+            return Response(
+                {'error': 'Meeting is already marked as completed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if application.status == 'not_started':
+            return Response(
+                {'error': 'Application has not been started yet.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        application.meeting_status = 'completed'
+        application.status = 'processing'
+        application.save()
+
+        serializer = ApplicationDetailSerializer(application)
+        return Response(
+            {
+                'application': serializer.data,
+                'message': 'Discovery call completed! Chat is now unlocked for the client.',
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Document Views
+# ---------------------------------------------------------------------------
+
+class DocumentUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, id):
+        try:
+            application = Application.objects.get(id=id, user=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = DocumentSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(application=application)
+            return Response(
+                {
+                    'document': serializer.data,
+                    'message': 'Document uploaded successfully!',
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        return Response(
+            {'errors': serializer.errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+
+class DocumentDeleteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, id, doc_id):
+        try:
+            application = Application.objects.get(id=id, user=request.user)
+        except Application.DoesNotExist:
+            return Response(
+                {'error': 'Application not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            document = Document.objects.get(id=doc_id, application=application)
+        except Document.DoesNotExist:
+            return Response(
+                {'error': 'Document not found'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        document.file.delete(save=False)
+        document.delete()
+
+        return Response(
+            {'message': 'Document deleted successfully!'},
+            status=status.HTTP_200_OK,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Messaging Views
+# ---------------------------------------------------------------------------
 
 class ApplicationMessagesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, id):
-        from .models import Application, ApplicationMessage
         try:
             application = Application.objects.get(id=id)
         except Application.DoesNotExist:
@@ -300,9 +395,12 @@ class ApplicationMessagesView(APIView):
         if not is_agent and not is_provider and application.user != request.user:
             return Response({'error': 'Forbidden.'}, status=403)
 
-        messages = ApplicationMessage.objects.filter(
-            application=application
-        ).select_related('sender').order_by('created_at')
+        messages = (
+            ApplicationMessage.objects
+            .filter(application=application)
+            .select_related('sender')
+            .order_by('created_at')
+        )
 
         data = [
             {
@@ -324,7 +422,6 @@ class ApplicationMessagesView(APIView):
         return Response({'messages': data})
 
     def post(self, request, id):
-        from .models import Application, ApplicationMessage
         from channels.layers import get_channel_layer
         from asgiref.sync import async_to_sync
 
@@ -341,7 +438,6 @@ class ApplicationMessagesView(APIView):
         is_provider = hasattr(request.user, 'sp_profile')
         sender_role = 'consultant' if (is_agent or is_provider) else 'client'
 
-        # Save the message
         msg = ApplicationMessage.objects.create(
             application=application,
             sender=request.user,
@@ -350,41 +446,46 @@ class ApplicationMessagesView(APIView):
             message_type='text',
         )
 
-        # Notify provider via WebSocket (only when client sends)
-        if sender_role == 'client' and application.service_provider:
-            try:
-                channel_layer = get_channel_layer()
-                provider_user_id = application.service_provider.user_id
-                async_to_sync(channel_layer.group_send)(
-                    f"user_{provider_user_id}",
-                    {
-                        'type': 'new_chat_message',
-                        'application_id': str(application.id),
-                        'client_name': application.user.get_full_name() or application.user.email,
-                        'message': content,
-                        'sender_role': sender_role,
-                        'created_at': msg.created_at.isoformat(),
-                    }
-                )
-                print(f"[WS] ✅ Notified provider user_{provider_user_id}")
-            except Exception as e:
-                print(f"[WS notify failed]: {e}")
+        # Notify via WebSocket
+        try:
+            channel_layer = get_channel_layer()
+            payload = {
+                'type':           'new_chat_message',
+                'application_id': str(application.id),
+                'client_name':    application.user.get_full_name() or application.user.email,
+                'message':        content,
+                'sender_role':    sender_role,
+                'created_at':     msg.created_at.isoformat(),
+            }
 
-        return Response({
-            'id':           str(msg.id),
-            'content':      msg.content,
-            'sender_role':  msg.sender_role,
-            'sender_id':    str(msg.sender_id),
-            'message_type': 'text',
-            'created_at':   msg.created_at.isoformat(),
-        }, status=201)
+            # Always notify admin room
+            async_to_sync(channel_layer.group_send)('admin_room', payload)
+
+            # Also notify the assigned provider when the client sends
+            if sender_role == 'client' and application.service_provider:
+                async_to_sync(channel_layer.group_send)(
+                    f'user_{application.service_provider.user_id}', payload
+                )
+        except Exception as e:
+            print(f'[WS notify failed]: {e}')
+
+        return Response(
+            {
+                'id':           str(msg.id),
+                'content':      msg.content,
+                'sender_role':  msg.sender_role,
+                'sender_id':    str(msg.sender_id),
+                'message_type': 'text',
+                'created_at':   msg.created_at.isoformat(),
+            },
+            status=201,
+        )
 
 
 class ApplicationMessageFileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
-        from .models import Application, ApplicationMessage
         try:
             application = Application.objects.get(id=id)
         except Application.DoesNotExist:
@@ -408,17 +509,25 @@ class ApplicationMessageFileView(APIView):
             file_name=file.name,
         )
 
-        return Response({
-            'id':           str(msg.id),
-            'sender_role':  msg.sender_role,
-            'message_type': 'file',
-            'file_url':     request.build_absolute_uri(msg.file_url.url),
-            'file_name':    msg.file_name,
-            'created_at':   msg.created_at.isoformat(),
-        }, status=201)
-    
+        return Response(
+            {
+                'id':           str(msg.id),
+                'sender_role':  msg.sender_role,
+                'message_type': 'file',
+                'file_url':     request.build_absolute_uri(msg.file_url.url),
+                'file_name':    msg.file_name,
+                'created_at':   msg.created_at.isoformat(),
+            },
+            status=201,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Package Recommendation Views
+# ---------------------------------------------------------------------------
+
 class AdminRecommendPackageView(APIView):
-    """Admin recommends a package to a specific applicant"""
+    """Admin recommends a package to a specific applicant."""
     permission_classes = [permissions.IsAdminUser]
 
     def post(self, request, user_id):
@@ -428,7 +537,7 @@ class AdminRecommendPackageView(APIView):
         if not package_id:
             return Response(
                 {'error': 'package_id is required'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -436,7 +545,7 @@ class AdminRecommendPackageView(APIView):
         except User.DoesNotExist:
             return Response(
                 {'error': 'User not found'},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         try:
@@ -444,7 +553,7 @@ class AdminRecommendPackageView(APIView):
         except Package.DoesNotExist:
             return Response(
                 {'error': 'Package not found'},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         recommendation = PackageRecommendation.objects.create(
@@ -452,50 +561,58 @@ class AdminRecommendPackageView(APIView):
             package=package,
             recommended_by=request.user,
             admin_note=admin_note,
-            status='pending'
+            status='pending',
         )
 
         serializer = PackageRecommendationSerializer(recommendation)
-        return Response({
-            'recommendation': serializer.data,
-            'message': f'Package "{package.title}" recommended to {target_user.email}'
-        }, status=status.HTTP_201_CREATED)
+        return Response(
+            {
+                'recommendation': serializer.data,
+                'message': f'Package "{package.title}" recommended to {target_user.email}',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class UserRecommendationsView(APIView):
-    """User sees all packages recommended to them"""
+    """User sees all packages recommended to them."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        recommendations = PackageRecommendation.objects.filter(
-            user=request.user
-        ).select_related('package', 'recommended_by')
-
+        recommendations = (
+            PackageRecommendation.objects
+            .filter(user=request.user)
+            .select_related('package', 'recommended_by')
+        )
         serializer = PackageRecommendationSerializer(recommendations, many=True)
-        return Response({
-            'recommendations': serializer.data,
-            'count': recommendations.count()
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                'recommendations': serializer.data,
+                'count': recommendations.count(),
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def patch(self, request, rec_id=None):
-        """User marks a recommendation as viewed/accepted/declined"""
+        """User marks a recommendation as viewed, accepted, or declined."""
         try:
             rec = PackageRecommendation.objects.get(id=rec_id, user=request.user)
         except PackageRecommendation.DoesNotExist:
             return Response(
                 {'error': 'Recommendation not found'},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
 
         new_status = request.data.get('status')
         if new_status not in ['viewed', 'accepted', 'declined']:
             return Response(
                 {'error': 'Invalid status'},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         rec.status = new_status
         rec.save()
-        return Response({
-            'message': f'Recommendation marked as {new_status}'
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {'message': f'Recommendation marked as {new_status}'},
+            status=status.HTTP_200_OK,
+        )
