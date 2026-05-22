@@ -222,6 +222,7 @@ class CallConsumer(AsyncWebsocketConsumer):
                 'sender_role': sender_role,
                 'client_name': self.get_display_name(self.user),
                 'created_at': datetime.datetime.now().isoformat(),
+                'sender_user_id': str(self.user.id),
             }
 
             # ✅ Admin sending to user
@@ -232,6 +233,7 @@ class CallConsumer(AsyncWebsocketConsumer):
                         **payload
                     }
                 )
+                await self.send(text_data=json.dumps(payload))
 
             # ✅ User sending to admin_room
             elif sender_role == 'client':
@@ -241,7 +243,8 @@ class CallConsumer(AsyncWebsocketConsumer):
                         **payload
                     }
                 )
-
+                # Echo back to sender so they see their message confirmed
+                await self.send(text_data=json.dumps({**payload, 'sender_role': 'client'}))
     # ─────────────────────────────────────────
     # CHANNEL EVENTS
     # ─────────────────────────────────────────
@@ -286,6 +289,7 @@ class CallConsumer(AsyncWebsocketConsumer):
             'client_name': event['client_name'],
             'message': event['message'],
             'sender_role': event['sender_role'],
+            'sender_user_id': event.get('sender_user_id'), 
             'created_at': event['created_at'],
         }))
 

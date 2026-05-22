@@ -36,7 +36,6 @@ urlpatterns = [
     path('<int:id>/documents/<int:doc_id>/', DocumentDeleteView.as_view(), name='document-delete'),
     path('admin/all/', AdminApplicationListView.as_view(), name='admin-application-list'),
 
-
     path('<int:id>/messages/', ApplicationMessagesView.as_view(), name='application-messages'),
     path('<int:id>/messages/file/', ApplicationMessageFileView.as_view(), name='application-messages-file'),
 
