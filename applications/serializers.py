@@ -132,15 +132,14 @@ class ApplicationDetailSerializer(serializers.ModelSerializer):
 
 
 class ApplicationStartSerializer(serializers.ModelSerializer):
-    """
-    Used when a student clicks 'Start Application'.
-    Only updates the status to 'started'.
-    Everything else (consultant, meeting) is set by the backend automatically.
-    """
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    full_name = serializers.CharField(source='user.fullname', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+
     class Meta:
         model = Application
-        fields = ['id', 'status'] 
-        read_only_fields = ['id','status']
+        fields = ['id', 'status', 'user_id', 'full_name', 'email']
+        read_only_fields = ['id', 'status', 'user_id', 'full_name', 'email']
 
 
 class MeetingCancelSerializer(serializers.ModelSerializer):
