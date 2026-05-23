@@ -139,8 +139,8 @@ class ApplicationStartSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = Application
-        fields = ['status']
-        read_only_fields = ['status']
+        fields = ['id', 'status'] 
+        read_only_fields = ['id','status']
 
 
 class MeetingCancelSerializer(serializers.ModelSerializer):
