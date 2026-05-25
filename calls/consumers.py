@@ -188,6 +188,7 @@ class CallConsumer(AsyncWebsocketConsumer):
             payload = {
                 'type': 'package_recommendation',
                 'package': package,
+                'related_packages': data.get('related_packages', []),  # ← add this
                 'recommended_by': self.get_display_name(self.user),
                 'session_id': session_id,
             }
