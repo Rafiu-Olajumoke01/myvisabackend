@@ -135,11 +135,18 @@ class ApplicationStartSerializer(serializers.ModelSerializer):
     user_id = serializers.IntegerField(source='user.id', read_only=True)
     full_name = serializers.CharField(source='user.fullname', read_only=True)
     email = serializers.CharField(source='user.email', read_only=True)
+    package_title = serializers.CharField(source='package.title', read_only=True)
+    package_country = serializers.CharField(source='package.country', read_only=True)
+    submitted_at = serializers.DateTimeField(read_only=True)
+    documents_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Application
-        fields = ['id', 'status', 'user_id', 'full_name', 'email']
-        read_only_fields = ['id', 'status', 'user_id', 'full_name', 'email']
+        fields = ['id', 'status', 'user_id', 'full_name', 'email', 'package_title', 'package_country', 'submitted_at', 'documents_count']
+        read_only_fields = ['id', 'status', 'user_id', 'full_name', 'email', 'package_title', 'package_country', 'submitted_at', 'documents_count']
+
+    def get_documents_count(self, obj):
+        return obj.documents.count()
 
 
 class MeetingCancelSerializer(serializers.ModelSerializer):
