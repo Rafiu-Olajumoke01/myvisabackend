@@ -193,10 +193,8 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://myvisafrontend.vercel.app',  
-    'https://myvisafrontend-ip5h.vercel.app',
-    "https://ingress.travel",
-    "https://www.ingress.travel",
+    'https://flyywise.com',
+    'https://www.flyywise.com',
     os.environ.get('FRONTEND_URL', ''),
 ]
 
@@ -249,10 +247,9 @@ CHANNEL_LAYERS = {
 }
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://web-production-f50dc.up.railway.app',
-    'https://myvisafrontend.vercel.app',    
-    'https://myvisafrontend-ip5h.vercel.app',
     'http://localhost:3000',
+    'https://flyywise.com',
+    'https://www.flyywise.com',
 ]
 
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '363406370992-ndgg6i6udp39oq15b9fkkeuu42gaak96.apps.googleusercontent.com')
